@@ -1,0 +1,19 @@
+name: Push
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+
+  lint:
+    uses: ./.github/workflows/lint.yml
+    secrets: inherit
+
+  release:
+    uses: ./.github/workflows/release.yml
+    secrets: inherit
