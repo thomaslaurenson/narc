@@ -1,40 +1,61 @@
-# PYTHON ENVIRONMENT
-venv_create:
-	python3 -m venv ./venv; \
-	. ./venv/bin/activate && \
-	pip3 install -r requirements.txt
+SHELL := /bin/bash
 
-venv_create_dev:
-	python3 -m venv ./venv; \
-	. ./venv/bin/activate && \
-	pip3 install -r requirements-dev.txt
+.PHONY: help install install_all update clean lint format format_check update_mitmproxy tag_release
 
-# PYTHON
-update_packages:
-	python3 -m venv ./venv; \
-	. ./venv/bin/activate && \
-	pip3 install -r requirements-dev.txt && \
-	echo "[*] Checking: requirements-dev.txt" && \
-	pur -r requirements-dev.txt && \
-	echo "[*] Checking: requirements.txt" && \
-	pur -r requirements.txt && \
-	echo "[*] Checking: examples/python/requirements.txt" && \
-	pur -r examples/python/requirements.txt
+help:
+	@echo "Available targets:"
+	@echo "  install            Install dependencies (uv)"
+	@echo "  install_all        Install all optional dependencies (uv)"
+	@echo "  update             Update all packages to latest versions"
+	@echo "  clean              Remove build artifacts"
+	@echo "  lint               Check code with ruff"
+	@echo "  format             Format code with ruff"
+	@echo "  format_check       Check code formatting"
+	@echo "  tag_release        Tag git with version from pyproject and push"
 
-# MITMPROXY
-update_mitmproxy:
-	echo "[*] Updating mitmproxy..."; \
-	LATEST_VERSION="11.1.2"; \
-	TARGET_ARCHIVE="https://downloads.mitmproxy.org/$${LATEST_VERSION}/mitmproxy-$${LATEST_VERSION}-linux-x86_64.tar.gz"; \
-	wget -O mitmproxy.tar.gz $${TARGET_ARCHIVE}; \
-	tar -xvf mitmproxy.tar.gz
+install:
+	uv sync
 
-# LINTING
-lint: \
-	venv_create_dev \
-	lint_python
+install_all:
+	uv sync --all-extras
 
-lint_python:
-	. ./venv/bin/activate && \
-	echo "[*] Linting Python..." && \
-	python3 -m flake8 .
+update:
+	uv lock --upgrade
+	uv sync --all-extras
+
+clean:
+	rm -rf .venv dist build
+	find . -type d -name '__pycache__' -exec rm -rf {} +
+	find . -type f -name '*.pyc' -delete
+
+lint:
+	uv run ruff check .
+
+lint_fix:
+	uv run ruff check --fix .
+
+format:
+	uv run ruff format .
+
+format_check:
+	uv run ruff format --check .
+
+# TAG
+tag_release:
+	VERSION=$$(grep -m1 'version = ' pyproject.toml | cut -d '"' -f 2); \
+	TAG="v$$VERSION"; \
+	echo "[*] Current version: $$TAG"; \
+	read -p "[*] Tag and push? (y/N) " yn; \
+	case $$yn in \
+		[yY]*) \
+			git tag $$TAG; \
+			git push origin $$TAG; \
+			;; \
+		[nN]*) \
+			echo "[*] Exiting..."; \
+			;; \
+		*) \
+			echo "[*] Invalid response... Exiting"; \
+			exit 1; \
+			;; \
+	esac
