@@ -4,10 +4,8 @@ from pathlib import Path
 from typing import Optional
 from uuid import UUID
 
-from mitmproxy import http
-from mitmproxy import ctx
+from mitmproxy import ctx, http
 from mitmproxy.log import ALERT
-
 
 endpoints = {
     # https://dashboard.rc.nectar.org.au/project/api_access/
@@ -46,6 +44,7 @@ endpoints = {
 
 
 class NARC:
+    """NARC - Nectar Access Rules Creator."""
     def __init__(self):
         """Run first, before load."""
         # Addon options

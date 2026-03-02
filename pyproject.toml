@@ -1,0 +1,40 @@
+[project]
+name = "narc"
+version = "0.2.0"
+description = "Nectar Access Rules Creator"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "mitmproxy==12.2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.11.12",
+    "uv>=0.4.20",
+]
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "D",  # pydocstyle
+]
+preview = true
+ignore = [
+    "D100",  # Missing docstring in public module
+    "D103",  # Missing docstring in public function
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+known-first-party = ["narc"]
