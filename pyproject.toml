@@ -1,0 +1,21 @@
+[project]
+name = "narc"
+version = "0.2.0"
+requires-python = ">=3.12"
+dependencies = [
+    "mitmproxy==12.2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 79
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
