@@ -1,7 +1,9 @@
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 from uuid import UUID
 
 from mitmproxy import ctx, http
@@ -14,32 +16,32 @@ endpoints = {
     "account": "https://accounts.rc.nectar.org.au/api/",
     "alarming": "https://alarming.rc.nectar.org.au/",
     "allocations": "https://allocations.rc.nectar.org.au/rest_api/",
-    "application-catalog": "https://murano.rc.nectar.org.au:8082/",
-    "cloudformation": "https://heat.rc.nectar.org.au:8000/",
-    "compute": "https://nova.rc.nectar.org.au:8774/",
-    "container-infra": "https://magnum.rc.nectar.org.au:9511/",
-    "database": "https://dbaas.rc.nectar.org.au/",
-    "dns": "https://designate.rc.nectar.org.au:9001/",
-    "ec2": "https://nova.rc.nectar.org.au:8773/services/cloud",
-    "identity": "https://keystone.rc.nectar.org.au:5000/",
+    "application-catalog": "https://application-catalog.rc.nectar.org.au/",
+    "cloudformation": "https://cloudformation.rc.nectar.org.au/",
+    "compute": "https://compute.rc.nectar.org.au/",
+    "container-infra": "https://container-infra.rc.nectar.org.au/",
+    "database": "https://database.rc.nectar.org.au/",
+    "dns": "https://dns.rc.nectar.org.au/",
+    "identity": "https://identity.rc.nectar.org.au/",
     "image": "https://image.rc.nectar.org.au/",
     "key-manager": "https://key-manager.rc.nectar.org.au/",
-    "load-balancer": "https://lbaas.rc.nectar.org.au:9876/",
-    "message": "https://taynac.rc.nectar.org.au/",
-    "metric": "https://gnocchi.rc.nectar.org.au:8041/",
+    "load-balancer": "https://load-balancer.rc.nectar.org.au/",
+    "message": "https://message.rc.nectar.org.au/",
+    "metric": "https://metric.rc.nectar.org.au/",
     "nectar-ops": "https://status.rc.nectar.org.au/api/",
-    "nectar-reservation": "https://warre.rc.nectar.org.au/",
-    "network": "https://neutron.rc.nectar.org.au:9696/",
+    "nectar-reservation": "https://nectar-reservation.rc.nectar.org.au/",
+    "network": "https://network.rc.nectar.org.au/",
     "object-store": "https://object-store.rc.nectar.org.au/",
-    "orchestration": "https://heat.rc.nectar.org.au:8004/",
+    "orchestration": "https://orchestration.rc.nectar.org.au/",
     "outage": "https://status.rc.nectar.org.au/api/",
-    "placement": "https://placement.rc.nectar.org.au/placement/",
+    "placement": "https://placement.rc.nectar.org.au/",
     "rating": "https://rating.rc.nectar.org.au/",
     "reservation": "https://reservation.rc.nectar.org.au/",
     "s3": "https://swift.rc.nectar.org.au/",
-    "share": "https://manila.rc.nectar.org.au:8786/",
-    "sharev2": "https://manila.rc.nectar.org.au:8786/",
-    "volumev3": "https://cinder.rc.nectar.org.au:8776/",
+    "security": "https://security.rc.nectar.org.au/",
+    "share": "https://share.rc.nectar.org.au/",
+    "sharev2": "https://share.rc.nectar.org.au/",
+    "volumev3": "https://volume.rc.nectar.org.au/",
 }
 
 
@@ -93,24 +95,21 @@ class NARC:
         url = flow.request.url
         method = flow.request.method
 
-        # Skip anything that is not a request to nectar.org.au domain
-        if "nectar.org.au" not in url:
+        # Skip anything that is not a request to the nectar.org.au domain
+        hostname = urlparse(url).hostname or ""
+        if not hostname.endswith("nectar.org.au"):
             return
 
         logging.log(ALERT, ">>> Narcing on HTTP request...")
 
-        # Skip anything that does not match documented Nectar API endpoints
-        matching_service_name = None
-        matched = False
-
-        # Check the request URL matches a Nectar API endpoint
-        while not matched:
-            for endpoint_name, endpoint_path in self.endpoints.items():
-                if not url.startswith(endpoint_path):
-                    continue
-                else:
-                    matching_service_name = endpoint_name
-                    matched = True
+        # Check the request URL matches a known Nectar API endpoint
+        matching_service_name = next(
+            (name for name, path in self.endpoints.items() if url.startswith(path)),
+            None,
+        )
+        if matching_service_name is None:
+            logging.log(ALERT, f">>> No matching endpoint for URL: {url}")
+            return
 
         tmp_access_rule = {
             "service": matching_service_name,
@@ -119,9 +118,11 @@ class NARC:
             "url": url,
         }
 
-        # Log the result to file
-        log_string = f"{method} {url}\n"
-        with open(f"{Path(__file__).name}.log", "a") as f:
+        # Log the result to file (sanitize URL to prevent log injection)
+        safe_url = url.replace("\n", "\\n").replace("\r", "\\r")
+        log_string = f"{method} {safe_url}\n"
+        log_opener = lambda p, flags: os.open(p, flags, 0o600)  # noqa: E731
+        with open(f"{Path(__file__).name}.log", "a", opener=log_opener) as f:
             f.write(log_string)
 
         self.access_rules.append(tmp_access_rule)
@@ -181,8 +182,9 @@ class NARC:
         # Remove the keys to get a list of values
         unique_access_rules = list(unique_access_rules.values())
 
-        # Save output to a file
-        with open(f"{self.output_filename}.json", "w") as f:
+        # Save output to a file (owner read/write only)
+        json_opener = lambda p, flags: os.open(p, flags, 0o600)  # noqa: E731
+        with open(f"{self.output_filename}.json", "w", opener=json_opener) as f:
             json.dump(unique_access_rules, f, indent=4)
 
 
