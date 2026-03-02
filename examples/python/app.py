@@ -1,13 +1,12 @@
 import argparse
 import os
 
-from keystoneauth1 import identity, session
 import novaclient.client as nova_client
+from keystoneauth1 import identity, session
 
 
 def openstack_check_env_vars() -> bool:
-    """
-    Return true if there are OpenStack credentials in environment variables.
+    """Return true if there are OpenStack credentials in environment variables.
 
     The openstack session requires the following environment variables:
     - OS_AUTH_URL
@@ -27,8 +26,7 @@ def openstack_check_env_vars() -> bool:
 
 
 def create_openstack_session() -> session.Session:
-    """
-    Return a session object for the OpenStack cloud.
+    """Return a session object for the OpenStack cloud.
 
     This function leverages the OpenStack keystone package to create
     a connection to the OpenStack cloud using the application credentials
