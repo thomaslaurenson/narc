@@ -28,10 +28,20 @@ jobs:
             exit 1
           fi
 
+      - name: Check go mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
           version: v2.11.4
+
+      - name: Run govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: go.mod
 
       - name: Run tests
         run: go test -race -count=1 ./...

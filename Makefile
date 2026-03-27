@@ -4,12 +4,14 @@ BINARY  := narc
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -s -w -X github.com/thomaslaurenson/narc/cmd.Version=$(VERSION)
 
-.PHONY: help build install test test_verbose test_coverage vet clean snapshot release_check tag_release
+.PHONY: help build install fmt lint test test_verbose test_coverage vet clean snapshot release_check tag_release
 
 help:
 	@echo "Available targets:"
 	@echo "  build           Build the narc binary"
 	@echo "  install         Install narc to GOPATH/bin"
+	@echo "  fmt             Format all Go source files with gofmt"
+	@echo "  lint            Run golangci-lint"
 	@echo "  test            Run all tests"
 	@echo "  test_verbose    Run all tests with verbose output"
 	@echo "  vet             Run go vet"
@@ -23,6 +25,12 @@ build:
 
 install:
 	go install .
+
+fmt:
+	gofmt -w .
+
+lint:
+	golangci-lint run
 
 test:
 	go test ./...
