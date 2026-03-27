@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.0 - 2026-03-25
+
+### Changed
+
+- Complete rewrite in golang
+
 ## v0.2.0 - 2026-03-02
 
 ### Added
