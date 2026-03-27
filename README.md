@@ -1,73 +1,105 @@
 # narc
 
+![Build Status](https://img.shields.io/github/actions/workflow/status/UoA-eResearch/narc/tag.yml?style=flat) ![Test Status](https://img.shields.io/github/actions/workflow/status/UoA-eResearch/narc/tag.yml?style=flat&label=test)
+
+![Release Version](https://img.shields.io/github/v/release/UoA-eResearch/narc?style=flat)
+
+![Release downloads](https://img.shields.io/github/downloads/UoA-eResearch/narc/total?label=release_downloads)
+
 The Nectar Access Rules Creator, or `narc`, is a tool to help construct OpenStack Access Rules for Application Credentials.
 
-## What?
+## What?!
 
-- "Application Credentials" are used to allow software to talk to OpenStack, similar to users who have passwords
-- "Access Rules" are a type of access control within AppCreds that grant access specific resources
-- Trying to determine what access rules are needed is quite difficult, resulting in using the "Unrestricted" option
-- This tools helps analyse OpenStack API calls and generates an access rules JSON file automatically
-
-## How?
-
-- Start proxy to intercept traffic
-- Run usual OpenStack tooling (e.g., CLI, Python packages, Terraform)
-- Listen to OpenStack API calls
-- "Tidy" OpenStack API calls and create a JSON output
-- Use output to create AppCers
+- **Application Credentials** (AppCreds) allow software to authenticate to OpenStack without using a password
+- **Access Rules** restrict an AppCred to only the exact API calls it needs
+- Figuring out which access rules are needed is hard — most users fall back to "Unrestricted"
+- `narc` intercepts your OpenStack API traffic, analyses it, and generates a ready-to-use `access_rules.json`
 
 ## Inspiration
 
-The [`iamlive`](https://github.com/iann0036/iamlive) is an amazing tool that helps AWS developers/admins run AWS CLI commands from their workstation and see the exact permissions used. They take the results, and use it to make "IAM" policies (permissions) in the AWS cloud. This results in very fine-grained and accurate policies.
+[`iamlive`](https://github.com/iann0036/iamlive) is an amazing tool that shows AWS users the exact IAM permissions their CLI commands require. `narc` does the same thing for OpenStack.
+
+## Installation
+
+Download a pre-built binary from the [releases page](https://github.com/UoA-eResearch/narc/releases), or install from source:
+
+```sh
+go install github.com/thomaslaurenson/narc@latest
+```
 
 ## Quickstart
 
-- Start `mitmdump` with `narc` script:
-- `./mitmdump -s narc.py`
-- In another terminal, configure environment variables for `mitmproxy`:
-  - Set `https_proxy` to the default `https://127.0.0.1:8080`
-  - Configure your tooling to use the `mitmproxy` certificate (if needed)
-- Run any OpenStack CLI command, Terraform apply, or any tools that makes API calls
-- When done, use `Ctrl + C` to stop `mitmdump`
-- Review `access_rules.json` and `narc.py.log` for results
+### Wrap a command
 
-### OpenStack CLI example
+`narc run` wraps a subprocess and intercepts all OpenStack API calls made during its lifetime:
 
-```
-./mitmdump -s narc.py
-# Open new terminal
-https_proxy=https://127.0.0.1:8080 \
-openstack \
---os-cacert ~/.mitmproxy/mitmproxy-ca-cert.pem \
-project list
+```sh
+narc run -- openstack server list
 ```
 
-### Terraform Example
+Results are written to `~/.narc/access_rules.json` when the wrapped command exits. Subprocess stdout is suppressed by default; use `--show-output` to see it.
 
-```
-./mitmdump -s narc.py
-# Open new terminal
-https_proxy=https://127.0.0.1:8080 \
-SSL_CERT_FILE=~/.mitmproxy/mitmproxy-ca-cert.pem \
+### Background mode
+
+Run the proxy in the background and configure your shell manually:
+
+```sh
+narc run --background
+# narc prints the export commands to run in your shell, e.g.:
+#   export https_proxy=http://127.0.0.1:9099
+#   export HTTPS_PROXY=http://127.0.0.1:9099
+#   export http_proxy=http://127.0.0.1:9099
+#   export HTTP_PROXY=http://127.0.0.1:9099
+#   export SSL_CERT_FILE=~/.narc/ca.pem
+#   export REQUESTS_CA_BUNDLE=~/.narc/ca.pem
+#   export OS_CACERT=~/.narc/ca.pem
+
+# Run your tools…
+openstack server list
 terraform apply
+
+# Stop narc with Ctrl-C; access_rules.json will be written on exit.
 ```
 
-### Python Script Example
+### Interactive shell session
 
-```
-./mitmdump -s narc.py
-# Add this to your Python project
-import os
-home_directory = os.path.expanduser("~")
-mitmproxy_ca_cert = f"{home_directory}/.mitmproxy/mitmproxy-ca-cert.pem"
-os.environ["REQUESTS_CA_BUNDLE"] = mitmproxy_ca_cert
-os.environ["https_proxy"] = "https://127.0.0.1:8080"
+`narc shell` launches your default shell with the proxy already configured. Run
+as many commands as you like, then type `exit` or press Ctrl-D:
+
+```sh
+narc shell
+# [narc] Proxy listening on http://127.0.0.1:9099
+# [narc] Recording OpenStack API calls — run commands as normal.
+# [narc] Shell: /bin/bash  |  Type 'exit' or press Ctrl-D to stop recording.
+$ openstack server list
+$ openstack network list
+$ exit
+# [narc] Done. 4 unique access rule(s) written to ~/.narc/access_rules.json
 ```
 
-### Results Example
+## Usage Examples
 
+### OpenStack CLI
+
+```sh
+narc run -- openstack project list
 ```
+
+### Terraform
+
+```sh
+narc run -- terraform apply
+```
+
+### Python (OpenStack SDK)
+
+```sh
+narc run -- python my_openstack_script.py
+```
+
+### Results
+
+```json
 [
     {
         "service": "identity",
@@ -82,116 +114,30 @@ os.environ["https_proxy"] = "https://127.0.0.1:8080"
 ]
 ```
 
-## Getting Started
+## Configuration
 
-### Requirements
+`narc` stores its configuration in `~/.narc/narc.json`. The file is created with defaults on first run.
 
-- mitmproxy
-- Python >= 3.10
-
-### Install `mitmproxy`
-
-On Linux, [download binaries](https://mitmproxy.org/), extract binaries, and put in the project root folder, or another folder on your `PATH`:
-
-```
-VERSION="11.1.0"
-URL="https://downloads.mitmproxy.org/$${VERSION}/mitmproxy-$${VERSION}-linux-x86_64.tar.gz"
-wget -O mitmproxy.tar.gz ${URL}
-tar -xvf mitmproxy.tar.gz
+```json
+{
+    "proxy_port": 9099,
+    "output_file": "~/.narc/access_rules.json",
+    "log_file": "~/.narc/unmatched_requests.log"
+}
 ```
 
-On macOS use `brew`:
+## Environment Variables
 
-```
-brew install mitmproxy
-```
+When `narc run` wraps a subprocess, it injects the following into the child's environment:
 
-### Start `mitmproxy`
+| Variable | Value |
+|---|---|
+| `https_proxy` / `HTTPS_PROXY` | `http://127.0.0.1:<port>` |
+| `http_proxy` / `HTTP_PROXY` | `http://127.0.0.1:<port>` |
+| `SSL_CERT_FILE` | `~/.narc/ca.pem` |
+| `REQUESTS_CA_BUNDLE` | `~/.narc/ca.pem` |
+| `OS_CACERT` | `~/.narc/ca.pem` |
 
-Run the `mitmdump` binary, specifying the `narc.py` script:
+## CA Certificate
 
-```
-./mitmdump -s narc.py
-```
-
-Perform OpenStack API calls, using either:
-
-- The OpenStack CLI
-- The OpenStack Python packages
-- Other IaC tools, such as Terraform
-
-To stop recording API calls, exit with `Ctrl + C`.
-
-Results are stored, by default, in:
-
-- `access_rules.json`
-
-A log of all HTTP requests is stored in:
-
-- `narc.py.log`
-
-### Configure Application to use `mitmproxy`
-
-You will need two things:
-
-- Trust the `mitmproxy` CA to avoid TLS errors
-- Tell your application to use the proxy
-
-There are various ways to accomplish both of these.
-
-### Use With OpenStack CLI
-
-An example command:
-
-```
-https_proxy=https://127.0.0.1:8080 openstack --os-cacert ~/.mitmproxy/mitmproxy-ca-cert.pem project list
-```
-
-Or, you can set an alias in `~/.bashrc`:
-
-```
-alias openstack_proxy="https_proxy=https://127.0.0.1:8080 openstack --os-cacert ~/.mitmproxy/mitmproxy-ca-cert.pem"
-```
-
-Then run the command:
-
-```
-openstack_proxy project list
-```
-
-### Use With Python
-
-Place the following in to your Python code:
-
-```
-home_directory = os.path.expanduser("~")
-mitmproxy_ca_cert = f"{home_directory}/.mitmproxy/mitmproxy-ca-cert.pem"
-os.environ["REQUESTS_CA_BUNDLE"] = mitmproxy_ca_cert
-os.environ["https_proxy"] = "https://127.0.0.1:8080"
-```
-
-Instead of using the `REQUESTS_CA_BUNDLE`, you could use 
-
-```
-home_directory = os.path.expanduser("~")
-os.environ["SSL_CERT_FILE"] = f"{home_directory}/.mitmproxy/mitmproxy-ca-cert.pem"
-```
-
-However, using this method... when you create a session with Keystone, specify the SSL certificate in the `verify` parameter:
-
-```
-import keystoneclient.client as keystone_client
-from keystoneauth1 import session
-
-...
-sess = session.Session(auth=auth, verify=os.environ.get("SSL_CERT_FILE"))
-keystone_c = keystone_client.Client(session=sess)
-```
-
-### Use With Terraform
-
-An example command:
-
-```
-https_proxy=https://127.0.0.1:8080 SSL_CERT_FILE=~/.mitmproxy/mitmproxy-ca-cert.pem terraform apply
-```
+`narc` uses a local CA certificate to perform HTTPS interception (MITM). The certificate is generated automatically at `~/.narc/ca.pem` on first run and is valid for 2 years (auto-renewed when expiry is within 30 days). No manual setup is required.

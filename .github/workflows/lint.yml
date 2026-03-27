@@ -1,27 +1,47 @@
 ---
-name: Lint All
+name: Lint and Test
 
 on: workflow_call
 
+permissions:
+  contents: read
+
 jobs:
-  python_lint:
+  go_lint_test:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository code
         uses: actions/checkout@v6
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Set up Go
+        uses: actions/setup-go@v6
         with:
-          python-version-file: "pyproject.toml"
+          go-version-file: go.mod
+          cache: true
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Check go mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
         with:
-          enable-cache: true
+          version: v2.11.4
 
-      - name: Install dev packages
-        run: uv sync --all-extras
+      - name: Run govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: go.mod
 
-      - name: Code formatting (ruff)
-        run: uv run ruff check .
+      - name: Run tests
+        run: go test -race -count=1 ./...

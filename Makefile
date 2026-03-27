@@ -1,61 +1,72 @@
 SHELL := /bin/bash
 
-.PHONY: help install install_all update clean lint format format_check update_mitmproxy tag_release
+BINARY  := narc
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS := -s -w -X github.com/thomaslaurenson/narc/cmd.Version=$(VERSION)
+
+.PHONY: help build install fmt lint test test_verbose test_coverage vet clean snapshot release_check tag_release
 
 help:
 	@echo "Available targets:"
-	@echo "  install            Install dependencies (uv)"
-	@echo "  install_all        Install all optional dependencies (uv)"
-	@echo "  update             Update all packages to latest versions"
-	@echo "  clean              Remove build artifacts"
-	@echo "  lint               Check code with ruff"
-	@echo "  format             Format code with ruff"
-	@echo "  format_check       Check code formatting"
-	@echo "  tag_release        Tag git with version from pyproject and push"
+	@echo "  build           Build the narc binary"
+	@echo "  install         Install narc to GOPATH/bin"
+	@echo "  fmt             Format all Go source files with gofmt"
+	@echo "  lint            Run golangci-lint"
+	@echo "  test            Run all tests"
+	@echo "  test_verbose    Run all tests with verbose output"
+	@echo "  vet             Run go vet"
+	@echo "  clean           Remove build artifacts"
+	@echo "  snapshot        Build a local multi-platform snapshot via GoReleaser"
+	@echo "  release_check   Validate .goreleaser.yml without publishing"
+	@echo "  tag_release     Tag a release and push to origin"
+
+build:
+	go build -ldflags="$(LDFLAGS)" -o $(BINARY) .
 
 install:
-	uv sync
+	go install .
 
-install_all:
-	uv sync --all-extras
-
-update:
-	uv lock --upgrade
-	uv sync --all-extras
-
-clean:
-	rm -rf .venv dist build
-	find . -type d -name '__pycache__' -exec rm -rf {} +
-	find . -type f -name '*.pyc' -delete
+fmt:
+	gofmt -w .
 
 lint:
-	uv run ruff check .
+	golangci-lint run
 
-lint_fix:
-	uv run ruff check --fix .
+test:
+	go test ./...
 
-format:
-	uv run ruff format .
+test_verbose:
+	go test -v ./...
 
-format_check:
-	uv run ruff format --check .
+test_coverage:
+	go test -coverpkg=./internal/... -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out
+	rm coverage.out
 
-# TAG
+vet:
+	go vet ./...
+
+clean:
+	rm -f $(BINARY)
+	rm -rf dist/
+
+snapshot:
+	goreleaser release --snapshot --clean
+
+release_check:
+	goreleaser check
+
 tag_release:
-	VERSION=$$(grep -m1 'version = ' pyproject.toml | cut -d '"' -f 2); \
-	TAG="v$$VERSION"; \
-	echo "[*] Current version: $$TAG"; \
+	@read -p "Enter version tag (e.g. v0.1.0): " TAG; \
+	echo "[*] Tagging: $$TAG"; \
 	read -p "[*] Tag and push? (y/N) " yn; \
 	case $$yn in \
 		[yY]*) \
-			git tag $$TAG; \
-			git push origin $$TAG; \
-			;; \
-		[nN]*) \
-			echo "[*] Exiting..."; \
+			git tag "$$TAG"; \
+			git push origin "$$TAG"; \
+			echo "[*] Released $$TAG"; \
 			;; \
 		*) \
-			echo "[*] Invalid response... Exiting"; \
-			exit 1; \
+			echo "[*] Aborted"; \
 			;; \
 	esac

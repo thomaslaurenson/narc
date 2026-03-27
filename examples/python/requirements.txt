@@ -1,2 +1,0 @@
-python-keystoneclient==5.5.0
-python-novaclient==18.8.0
