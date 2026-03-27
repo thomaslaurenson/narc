@@ -79,7 +79,11 @@ func TestProxyIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET through proxy: %v", err)
 	}
-	resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("closing response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status: got %d, want 200", resp.StatusCode)

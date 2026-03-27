@@ -108,6 +108,7 @@ func (a *Analyzer) WriteRules(outPath string) error {
 	if err != nil {
 		return fmt.Errorf("marshal rules: %w", err)
 	}
+	//nolint:gosec // file intentionally world-readable
 	if err := os.WriteFile(outPath, data, 0644); err != nil {
 		return fmt.Errorf("write rules: %w", err)
 	}
