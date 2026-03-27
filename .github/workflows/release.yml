@@ -1,46 +1,36 @@
-name: Release on tag
+name: Release
 
 on: workflow_call
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  goreleaser:
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repository code
         uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
         with:
-          python-version-file: "pyproject.toml"
+          fetch-depth: 0
 
-      - name: Read version from pyproject
-        id: version
-        run: |
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import tomllib, pathlib
-          data = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
-          print(f"value={data['project']['version']}")
-          PY
-
-      - name: Extract changelog section
-        id: changelog
-        run: |
-          VERSION="${{ steps.version.outputs.value }}"
-          awk -v ver="$VERSION" '
-            BEGIN {found=0}
-            /^##[[:space:]]*v[0-9]/ {
-              if(found) exit
-              if ($0 ~ ver) {found=1; next}
-            }
-            found {print}
-          ' CHANGELOG.md > /tmp/release_notes.md
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Set up Go
+        uses: actions/setup-go@v6
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          body_path: /tmp/release_notes.md
+          go-version-file: go.mod
+          cache: true
+
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          awk "/^## ${TAG} /{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md \
+            > /tmp/release-notes.md
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "No CHANGELOG entry found for ${TAG}" >&2
+            exit 1
+          fi
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          args: release --clean --release-notes /tmp/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

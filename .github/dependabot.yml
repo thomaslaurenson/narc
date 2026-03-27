@@ -10,16 +10,8 @@ updates:
     assignees:
       - "thomaslaurenson"
 
-  - package-ecosystem: pip
+  - package-ecosystem: gomod
     directory: /
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 0  # only security updates
-    assignees:
-      - "thomaslaurenson"
-
-  - package-ecosystem: pip
-    directory: /examples/python/
     schedule:
       interval: weekly
     open-pull-requests-limit: 0  # only security updates
