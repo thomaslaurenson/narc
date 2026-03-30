@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -59,6 +60,11 @@ func (c *Catalog) Update(body []byte) error {
 		}
 	}
 
+	// Sort longest BaseURL first so Lookup can return on the first match.
+	sort.Slice(entries, func(i, j int) bool {
+		return len(entries[i].BaseURL) > len(entries[j].BaseURL)
+	})
+
 	c.mu.Lock()
 	c.entries = entries
 	c.mu.Unlock()
@@ -75,17 +81,13 @@ func (c *Catalog) Lookup(requestURL string) (Entry, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	var best Entry
-	found := false
+	// entries are sorted longest-first by Update, so the first match is the longest prefix.
 	for _, e := range c.entries {
 		if strings.HasPrefix(normalized, e.BaseURL) {
-			if !found || len(e.BaseURL) > len(best.BaseURL) {
-				best = e
-				found = true
-			}
+			return e, true
 		}
 	}
-	return best, found
+	return Entry{}, false
 }
 
 // stripDefaultPort removes the explicit port from a URL when it is the default
