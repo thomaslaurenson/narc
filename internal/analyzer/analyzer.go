@@ -28,26 +28,26 @@ type AccessRule struct {
 // Analyzer classifies intercepted requests, normalizes their paths, deduplicates,
 // and accumulates AccessRule entries.
 type Analyzer struct {
-	mu      sync.Mutex
-	seen    map[string]bool
-	rules   []AccessRule
-	catalog *catalog.Catalog
-	onNew   func(AccessRule)
-	// OnUnmatched is called when the catalog is ready but a URL does not match any
-	// catalog entry. Useful for debug logging; may be nil.
-	OnUnmatched func(method, url string)
-	// LogFile is the path to the file where unmatched URLs are appended.
-	// If empty, unmatched URLs are silently discarded.
-	LogFile string
+	mu           sync.Mutex
+	seen         map[string]bool
+	rules        []AccessRule
+	catalog      *catalog.Catalog
+	onNew        func(AccessRule)
+	onUnmatched  func(method, url string)
+	unmatchedLog *output.UnmatchedLog
 }
 
 // New creates an Analyzer backed by the given Catalog.
+// log is where unmatched URLs are written; nil disables file logging.
 // onNew is called after the lock is released whenever a new unique rule is found; may be nil.
-func New(c *catalog.Catalog, onNew func(AccessRule)) *Analyzer {
+// onUnmatched is called for debug logging when a URL does not match any catalog entry; may be nil.
+func New(c *catalog.Catalog, log *output.UnmatchedLog, onNew func(AccessRule), onUnmatched func(method, url string)) *Analyzer {
 	return &Analyzer{
-		seen:    make(map[string]bool),
-		catalog: c,
-		onNew:   onNew,
+		seen:         make(map[string]bool),
+		catalog:      c,
+		onNew:        onNew,
+		onUnmatched:  onUnmatched,
+		unmatchedLog: log,
 	}
 }
 
@@ -63,11 +63,11 @@ func (a *Analyzer) Process(method, rawURL string) {
 	entry, ok := a.catalog.Lookup(rawURL)
 	if !ok {
 		if a.catalog.IsReady() {
-			if a.LogFile != "" {
-				_ = output.WriteUnmatched(a.LogFile, rawURL)
+			if a.unmatchedLog != nil {
+				_ = a.unmatchedLog.Write(rawURL)
 			}
-			if a.OnUnmatched != nil {
-				a.OnUnmatched(method, rawURL)
+			if a.onUnmatched != nil {
+				a.onUnmatched(method, rawURL)
 			}
 		}
 		return
@@ -101,45 +101,36 @@ func (a *Analyzer) Rules() []AccessRule {
 }
 
 // WriteRules marshals the accumulated rules to JSON and writes them to outPath.
-// The file is created/truncated with mode 0600.
-func (a *Analyzer) WriteRules(outPath string) error {
+// Returns the number of rules written. The file is created/truncated with mode 0600.
+func (a *Analyzer) WriteRules(outPath string) (int, error) {
 	rules := a.Rules()
 	data, err := json.MarshalIndent(rules, "", "    ")
 	if err != nil {
-		return fmt.Errorf("marshal rules: %w", err)
+		return 0, fmt.Errorf("marshal rules: %w", err)
 	}
-	//nolint:gosec // file intentionally world-readable
-	if err := os.WriteFile(outPath, data, 0644); err != nil {
-		return fmt.Errorf("write rules: %w", err)
+	if err := os.WriteFile(outPath, data, 0600); err != nil {
+		return 0, fmt.Errorf("write rules: %w", err)
 	}
-	return nil
+	return len(rules), nil
 }
 
 // normalizePath strips the BaseURL prefix, removes query parameters, wildcards UUID and
 // numeric path segments, appends ** to a trailing slash, and ensures a leading slash.
 func normalizePath(rawURL, baseURL string) string {
-	path := strings.TrimPrefix(rawURL, baseURL)
-
-	// If TrimPrefix had no effect, parse both URLs and strip the path component.
-	if path == rawURL {
-		if u, err := url.Parse(rawURL); err == nil {
-			path = u.Path
-			if bu, err := url.Parse(baseURL); err == nil {
-				path = strings.TrimPrefix(path, strings.TrimRight(bu.Path, "/"))
-			}
-		}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	path := u.Path
+	if bu, err := url.Parse(baseURL); err == nil {
+		path = strings.TrimPrefix(path, strings.TrimRight(bu.Path, "/"))
 	}
 
-	// Strip query parameters.
-	if idx := strings.Index(path, "?"); idx >= 0 {
-		path = path[:idx]
-	}
-
-	// Wildcard UUID and numeric segments.
+	// Wildcard UUID and numeric segments with * (single segment, no slashes).
 	segments := strings.Split(path, "/")
 	for i, seg := range segments {
 		if uuidRE.MatchString(seg) || numericRE.MatchString(seg) {
-			segments[i] = "**"
+			segments[i] = "*"
 		}
 	}
 	path = strings.Join(segments, "/")
