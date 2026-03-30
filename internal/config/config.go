@@ -22,6 +22,9 @@ type Config struct {
 	LogFile    string `json:"log_file"`
 }
 
+// ErrNotFound is returned by Load when the config file does not exist.
+var ErrNotFound = errors.New("config file not found")
+
 // NarcDirPath returns the path to the narc configuration directory without
 // creating it. Use this when only the path is needed (e.g. read-only lookups).
 func NarcDirPath() (string, error) {
@@ -55,19 +58,18 @@ func Load() (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			c := defaults()
-			return c, c.Save()
+			return nil, ErrNotFound
 		}
 		return nil, err
 	}
 
-	c := defaults()
+	c := Defaults()
 	if err := json.Unmarshal(data, c); err != nil {
 		return nil, err
 	}
 
 	// Enforce defaults for zero-value fields (read-tolerant).
-	d := defaults()
+	d := Defaults()
 	if c.ProxyPort == 0 {
 		c.ProxyPort = DefaultProxyPort
 	}
@@ -78,14 +80,13 @@ func Load() (*Config, error) {
 		c.LogFile = d.LogFile
 	}
 
-	// Migrate bare filenames written by older narc versions (before paths defaulted
-	// to ~/.narc/). A value equal to just the bare filename has no directory component
-	// and would resolve to CWD — replace it with the correct ~/.narc/ path.
-	if c.OutputFile == DefaultOutputFile {
-		c.OutputFile = d.OutputFile
+	// Migrate bare filenames (no directory component) to ~/.narc/.
+	// Any filename without a path separator would otherwise resolve to CWD.
+	if !filepath.IsAbs(c.OutputFile) && filepath.Dir(c.OutputFile) == "." {
+		c.OutputFile = filepath.Join(dir, c.OutputFile)
 	}
-	if c.LogFile == DefaultLogFile {
-		c.LogFile = d.LogFile
+	if !filepath.IsAbs(c.LogFile) && filepath.Dir(c.LogFile) == "." {
+		c.LogFile = filepath.Join(dir, c.LogFile)
 	}
 
 	if c.ProxyPort < 1 || c.ProxyPort > 65535 {
@@ -110,7 +111,8 @@ func (c *Config) Save() error {
 	return os.WriteFile(path, data, 0600)
 }
 
-func defaults() *Config {
+// Defaults returns a Config populated with sensible defaults anchored to ~/.narc/.
+func Defaults() *Config {
 	dir, err := NarcDirPath()
 	if err != nil {
 		// Fallback to relative names if home directory is unavailable.
