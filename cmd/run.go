@@ -15,6 +15,7 @@ import (
 	"github.com/thomaslaurenson/narc/internal/analyzer"
 	"github.com/thomaslaurenson/narc/internal/catalog"
 	"github.com/thomaslaurenson/narc/internal/certmgr"
+	"github.com/thomaslaurenson/narc/internal/output"
 	"github.com/thomaslaurenson/narc/internal/proxy"
 )
 
@@ -23,13 +24,26 @@ var logFileFlag string
 var outputFileFlag string
 var showOutputFlag bool
 
-// proxyKeys is the set of environment variable names that narc overrides when
-// building a subprocess environment or printing manual export instructions.
-var proxyKeys = map[string]bool{
-	"https_proxy": true, "HTTPS_PROXY": true,
-	"http_proxy": true, "HTTP_PROXY": true,
-	"SSL_CERT_FILE": true, "REQUESTS_CA_BUNDLE": true,
-	"OS_CACERT": true,
+// proxyVar holds a proxy environment variable name and its resolved value.
+type proxyVar struct {
+	key   string
+	value string
+}
+
+// proxyEnvVars is the single source of truth for all proxy-related environment
+// variables narc sets. buildEnv and printProxyEnv both derive from this slice,
+// so adding a new variable only requires one edit here.
+func proxyEnvVars(port int, certPath string) []proxyVar {
+	proxyURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	return []proxyVar{
+		{"https_proxy", proxyURL},
+		{"HTTPS_PROXY", proxyURL},
+		{"http_proxy", proxyURL},
+		{"HTTP_PROXY", proxyURL},
+		{"SSL_CERT_FILE", certPath},
+		{"REQUESTS_CA_BUNDLE", certPath},
+		{"OS_CACERT", certPath},
+	}
 }
 
 var runCmd = &cobra.Command{
@@ -49,13 +63,20 @@ func runRun(_ *cobra.Command, args []string) error {
 		cfg.OutputFile = outputFileFlag
 	}
 
-	p, az, certPath, err := startRecording()
+	var onUnmatched func(string, string)
+	if debugFlag {
+		onUnmatched = func(method, url string) {
+			fmt.Fprintf(os.Stderr, "[narc:debug] unmatched: %s %s\n", method, url)
+		}
+	}
+
+	p, az, certPath, unmatchedLog, err := startRecording(cfg.LogFile, onUnmatched)
 	if err != nil {
 		return err
 	}
 
 	if backgroundFlag {
-		runBackground(p, az, certPath)
+		runBackground(p, az, certPath, unmatchedLog)
 		return nil
 	}
 
@@ -63,46 +84,62 @@ func runRun(_ *cobra.Command, args []string) error {
 
 	fmt.Fprintf(os.Stderr, "[narc] Shutting down...\n")
 	p.Stop()
+	if unmatchedLog != nil {
+		_ = unmatchedLog.Close()
+	}
 	writeRulesOnExit(az)
-	os.Exit(exitCode)
-	return nil
+	return &ExitCodeError{Code: exitCode}
 }
 
 // startRecording creates the catalog, analyzer, and proxy, starts the proxy,
 // and returns them ready for use. Shared between the run and shell commands.
-func startRecording() (*proxy.Proxy, *analyzer.Analyzer, string, error) {
-	cat := catalog.NewCatalog()
-	az := analyzer.New(cat, func(rule analyzer.AccessRule) {
-		fmt.Fprintf(os.Stderr, "[narc] %-20s %-8s %s\n", rule.Service, rule.Method, rule.Path)
-	})
-	az.LogFile = cfg.LogFile
-	if debugFlag {
-		az.OnUnmatched = func(method, url string) {
-			fmt.Fprintf(os.Stderr, "[narc:debug] unmatched: %s %s\n", method, url)
+// logFile is opened for unmatched-URL logging (nil if empty). onUnmatched is
+// the debug callback; nil disables it. Both decisions belong to the caller.
+func startRecording(logFile string, onUnmatched func(string, string)) (*proxy.Proxy, *analyzer.Analyzer, string, *output.UnmatchedLog, error) {
+	var unmatchedLog *output.UnmatchedLog
+	if logFile != "" {
+		var err error
+		unmatchedLog, err = output.OpenUnmatchedLog(logFile)
+		if err != nil {
+			return nil, nil, "", nil, fmt.Errorf("open unmatched log: %w", err)
 		}
 	}
 
-	p, err := proxy.New(cfg.ProxyPort, debugFlag, cat, az, cfg.LogFile)
+	cat := catalog.NewCatalog()
+	az := analyzer.New(cat, unmatchedLog, func(rule analyzer.AccessRule) {
+		fmt.Fprintf(os.Stderr, "[narc] %-20s %-8s %s\n", rule.Service, rule.Method, rule.Path)
+	}, onUnmatched)
+
+	p, err := proxy.New(cfg.ProxyPort, debugFlag, cat, az, unmatchedLog)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("create proxy: %w", err)
+		if unmatchedLog != nil {
+			_ = unmatchedLog.Close()
+		}
+		return nil, nil, "", nil, fmt.Errorf("create proxy: %w", err)
 	}
 
 	certPath, err := certmgr.CACertPath()
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("get CA cert path: %w", err)
+		if unmatchedLog != nil {
+			_ = unmatchedLog.Close()
+		}
+		return nil, nil, "", nil, fmt.Errorf("get CA cert path: %w", err)
 	}
 
 	if err := p.Start(); err != nil {
-		return nil, nil, "", fmt.Errorf("start proxy: %w", err)
+		if unmatchedLog != nil {
+			_ = unmatchedLog.Close()
+		}
+		return nil, nil, "", nil, fmt.Errorf("start proxy: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "[narc] Proxy listening on http://127.0.0.1:%d\n", p.Port)
-	return p, az, certPath, nil
+	return p, az, certPath, unmatchedLog, nil
 }
 
 func writeRulesOnExit(az *analyzer.Analyzer) {
-	n := len(az.Rules())
-	if err := az.WriteRules(cfg.OutputFile); err != nil {
+	n, err := az.WriteRules(cfg.OutputFile)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "[narc:error] Failed to write rules: %v\n", err)
 		return
 	}
@@ -112,24 +149,24 @@ func writeRulesOnExit(az *analyzer.Analyzer) {
 // buildEnv returns a copy of the current process environment with all proxy-related
 // vars removed and replaced by the narc proxy settings.
 func buildEnv(port int, caCertPath string) []string {
-	proxyURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	vars := proxyEnvVars(port, caCertPath)
 
-	env := make([]string, 0, len(os.Environ())+7)
+	keys := make(map[string]bool, len(vars))
+	for _, v := range vars {
+		keys[v.key] = true
+	}
+
+	env := make([]string, 0, len(os.Environ())+len(vars))
 	for _, kv := range os.Environ() {
 		key, _, _ := strings.Cut(kv, "=")
-		if !proxyKeys[key] {
+		if !keys[key] {
 			env = append(env, kv)
 		}
 	}
-	return append(env,
-		"https_proxy="+proxyURL,
-		"HTTPS_PROXY="+proxyURL,
-		"http_proxy="+proxyURL,
-		"HTTP_PROXY="+proxyURL,
-		"SSL_CERT_FILE="+caCertPath,
-		"REQUESTS_CA_BUNDLE="+caCertPath,
-		"OS_CACERT="+caCertPath,
-	)
+	for _, v := range vars {
+		env = append(env, v.key+"="+v.value)
+	}
+	return env
 }
 
 // runSubprocess starts args[0] with the remaining args and waits for it to exit
@@ -186,7 +223,7 @@ func runSubprocess(args []string, env []string, showOutput bool) int {
 	return 0
 }
 
-func runBackground(p *proxy.Proxy, az *analyzer.Analyzer, certPath string) {
+func runBackground(p *proxy.Proxy, az *analyzer.Analyzer, certPath string, unmatchedLog *output.UnmatchedLog) {
 	fmt.Fprintf(os.Stderr, "[narc] Running in background. PID: %d\n", os.Getpid())
 	fmt.Fprintf(os.Stderr, "[narc] Run the following in your shell:\n")
 	printProxyEnv(p.Port, certPath)
@@ -197,19 +234,17 @@ func runBackground(p *proxy.Proxy, az *analyzer.Analyzer, certPath string) {
 
 	fmt.Fprintf(os.Stderr, "\n[narc] Shutting down...\n")
 	p.Stop()
+	if unmatchedLog != nil {
+		_ = unmatchedLog.Close()
+	}
 	writeRulesOnExit(az)
 }
 
 // printProxyEnv prints shell export statements for the narc proxy environment.
 func printProxyEnv(port int, certPath string) {
-	proxyURL := fmt.Sprintf("http://127.0.0.1:%d", port)
-	fmt.Fprintf(os.Stderr, "  export https_proxy=%s\n", proxyURL)
-	fmt.Fprintf(os.Stderr, "  export HTTPS_PROXY=%s\n", proxyURL)
-	fmt.Fprintf(os.Stderr, "  export http_proxy=%s\n", proxyURL)
-	fmt.Fprintf(os.Stderr, "  export HTTP_PROXY=%s\n", proxyURL)
-	fmt.Fprintf(os.Stderr, "  export SSL_CERT_FILE=%s\n", certPath)
-	fmt.Fprintf(os.Stderr, "  export REQUESTS_CA_BUNDLE=%s\n", certPath)
-	fmt.Fprintf(os.Stderr, "  export OS_CACERT=%s\n", certPath)
+	for _, v := range proxyEnvVars(port, certPath) {
+		fmt.Fprintf(os.Stderr, "  export %s=%s\n", v.key, v.value)
+	}
 }
 
 func init() {
