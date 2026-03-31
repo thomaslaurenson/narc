@@ -32,7 +32,7 @@ func TestIsKeystoneAuthPath(t *testing.T) {
 func TestProxyNewNilCatalogAndHandler(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	p, err := New(0, false, nil, nil, "")
+	p, err := New(0, false, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestProxyIntegration(t *testing.T) {
 	cat := catalog.NewCatalog()
 	handler := &mockHandler{}
 
-	p, err := New(0, false, cat, handler, "")
+	p, err := New(0, false, cat, handler, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

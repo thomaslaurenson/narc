@@ -29,22 +29,22 @@ type RequestHandler interface {
 }
 
 type Proxy struct {
-	Port    int
-	Debug   bool
-	handler RequestHandler
-	cat     *catalog.Catalog
-	logFile string
-	server  *http.Server
-	cancel  context.CancelFunc
+	Port         int
+	Debug        bool
+	handler      RequestHandler
+	cat          *catalog.Catalog
+	unmatchedLog *output.UnmatchedLog
+	server       *http.Server
+	cancel       context.CancelFunc
 }
 
 // New creates a Proxy. It ensures the CA certificate exists and loads it.
 // cat and handler may be nil; when non-nil, cat is used to intercept Keystone
 // token responses and handler is notified of every request.
-// logFile is the path used to log pre-catalog requests; an empty string disables logging.
+// unmatchedLog is used to log pre-catalog requests; nil disables logging.
 // NOTE: goproxy.GoproxyCa is a package-level global, so only one Proxy
 // instance per process is supported.
-func New(port int, debug bool, cat *catalog.Catalog, handler RequestHandler, logFile string) (*Proxy, error) {
+func New(port int, debug bool, cat *catalog.Catalog, handler RequestHandler, unmatchedLog *output.UnmatchedLog) (*Proxy, error) {
 	if err := certmgr.EnsureCACert(); err != nil {
 		return nil, fmt.Errorf("ensure CA cert: %w", err)
 	}
@@ -65,11 +65,11 @@ func New(port int, debug bool, cat *catalog.Catalog, handler RequestHandler, log
 	goproxy.GoproxyCa = tlsCert
 
 	return &Proxy{
-		Port:    port,
-		Debug:   debug,
-		cat:     cat,
-		handler: handler,
-		logFile: logFile,
+		Port:         port,
+		Debug:        debug,
+		cat:          cat,
+		handler:      handler,
+		unmatchedLog: unmatchedLog,
 	}, nil
 }
 
@@ -82,6 +82,10 @@ func (p *Proxy) Start() error {
 	// Intercept all HTTPS CONNECT tunnels for MITM.
 	proxyServer.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 
+	// NOTE: long-running requests will not be interrupted when Stop is called
+	// because bgCtx is not threaded into individual goproxy request handlers.
+	// For narc's use case (short-lived OpenStack API calls) this is a known,
+	// acceptable limitation. To fix, pass bgCtx via goproxy.ProxyCtx.
 	proxyServer.OnRequest().DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 		if p.Debug {
 			fmt.Fprintf(os.Stderr, "[narc:debug] %s %s\n", req.Method, req.URL.String())
@@ -93,8 +97,8 @@ func (p *Proxy) Start() error {
 		// excluding the Keystone auth request itself.
 		if p.cat != nil && !p.cat.IsReady() && !isKeystoneAuthPath(req.URL.Path) {
 			fmt.Fprintf(os.Stderr, "[narc:warn] Request received before catalog loaded — recording to unmatched_requests.log\n")
-			if p.logFile != "" {
-				_ = output.WriteUnmatched(p.logFile, req.URL.String())
+			if p.unmatchedLog != nil {
+				_ = p.unmatchedLog.Write(req.URL.String())
 			}
 		}
 		return req, nil
