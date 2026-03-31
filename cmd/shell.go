@@ -102,7 +102,8 @@ func runShell(_ *cobra.Command, _ []string) error {
 
 	// Put the outer terminal into raw mode: keystrokes pass directly to the pty
 	// without line-buffering, echo, or control-character processing by the host.
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	stdinFd := int(os.Stdin.Fd()) //nolint:gosec // fd is always a small non-negative value
+	oldState, err := term.MakeRaw(stdinFd)
 	if err != nil {
 		signal.Stop(sigwinch)
 		close(sigwinch)
@@ -114,7 +115,7 @@ func runShell(_ *cobra.Command, _ []string) error {
 		}
 		return fmt.Errorf("set raw mode: %w", err)
 	}
-	restoreTerminal := func() { _ = term.Restore(int(os.Stdin.Fd()), oldState) }
+	restoreTerminal := func() { _ = term.Restore(stdinFd, oldState) }
 	defer restoreTerminal()
 
 	// Banner printed after entering raw mode so \r\n renders correctly.
