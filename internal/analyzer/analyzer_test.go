@@ -49,13 +49,19 @@ func TestNormalizePath(t *testing.T) {
 			name:    "UUID segment wildcarded",
 			rawURL:  "https://compute.example.com/v2.1/servers/550e8400-e29b-41d4-a716-446655440000",
 			baseURL: "https://compute.example.com/",
-			want:    "/v2.1/servers/**",
+			want:    "/v2.1/servers/*",
 		},
 		{
 			name:    "numeric segment wildcarded",
 			rawURL:  "https://compute.example.com/v2.1/servers/12345",
 			baseURL: "https://compute.example.com/",
-			want:    "/v2.1/servers/**",
+			want:    "/v2.1/servers/*",
+		},
+		{
+			name:    "UUID in middle of path uses single-segment wildcard",
+			rawURL:  "https://compute.example.com/v2.1/servers/550e8400-e29b-41d4-a716-446655440000/ips",
+			baseURL: "https://compute.example.com/",
+			want:    "/v2.1/servers/*/ips",
 		},
 		{
 			name:    "query parameters stripped",
@@ -79,7 +85,7 @@ func TestNormalizePath(t *testing.T) {
 			name:    "multiple wildcarded segments",
 			rawURL:  "https://volume.example.com/v3/550e8400-e29b-41d4-a716-446655440000/snapshots/660f9500-f30c-52e5-b827-557766551111",
 			baseURL: "https://volume.example.com/",
-			want:    "/v3/**/snapshots/**",
+			want:    "/v3/*/snapshots/*",
 		},
 		{
 			name:    "version segment not wildcarded",
@@ -105,7 +111,7 @@ func TestProcessDeduplication(t *testing.T) {
 		{"compute", "https://compute.example.com/"},
 	})
 
-	az := New(cat, nil)
+	az := New(cat, nil, nil, nil)
 
 	az.Process("GET", "https://compute.example.com/v2.1/servers")
 	az.Process("GET", "https://compute.example.com/v2.1/servers")  // duplicate
@@ -124,9 +130,9 @@ func TestProcessOnNewCallback(t *testing.T) {
 	})
 
 	var called []AccessRule
-	az := New(cat, func(r AccessRule) {
+	az := New(cat, nil, func(r AccessRule) {
 		called = append(called, r)
-	})
+	}, nil)
 
 	az.Process("GET", "https://compute.example.com/v2.1/servers")
 	az.Process("GET", "https://compute.example.com/v2.1/servers") // duplicate — callback not called again
@@ -153,14 +159,14 @@ func TestProcessOnNewCallbackCanCallRules(t *testing.T) {
 
 	done := make(chan struct{})
 	var az *Analyzer
-	az = New(cat, func(r AccessRule) {
+	az = New(cat, nil, func(r AccessRule) {
 		// If the mutex were still held this would deadlock.
 		rules := az.Rules()
 		if len(rules) == 0 {
 			t.Error("Rules() returned empty slice inside onNew callback")
 		}
 		close(done)
-	})
+	}, nil)
 
 	az.Process("GET", "https://compute.example.com/v2.1/servers")
 
@@ -176,7 +182,7 @@ func TestProcessUnknownURL(t *testing.T) {
 		{"compute", "https://compute.example.com/"},
 	})
 
-	az := New(cat, nil)
+	az := New(cat, nil, nil, nil)
 	az.Process("GET", "https://unknown.example.com/v2.1/servers")
 
 	if len(az.Rules()) != 0 {
@@ -189,7 +195,7 @@ func TestRulesReturnsCopy(t *testing.T) {
 		{"compute", "https://compute.example.com/"},
 	})
 
-	az := New(cat, nil)
+	az := New(cat, nil, nil, nil)
 	az.Process("GET", "https://compute.example.com/v2.1/servers")
 
 	rules1 := az.Rules()
@@ -205,11 +211,11 @@ func TestWriteRulesPermissions(t *testing.T) {
 	cat := buildCatalog(t, [][2]string{
 		{"compute", "https://compute.example.com/"},
 	})
-	az := New(cat, nil)
+	az := New(cat, nil, nil, nil)
 	az.Process("GET", "https://compute.example.com/v2.1/servers")
 
 	out := filepath.Join(t.TempDir(), "rules.json")
-	if err := az.WriteRules(out); err != nil {
+	if _, err := az.WriteRules(out); err != nil {
 		t.Fatalf("WriteRules: %v", err)
 	}
 
@@ -217,7 +223,7 @@ func TestWriteRulesPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat output file: %v", err)
 	}
-	if info.Mode().Perm() != 0644 {
-		t.Errorf("file permissions: got %04o, want 0644", info.Mode().Perm())
+	if info.Mode().Perm() != 0600 {
+		t.Errorf("file permissions: got %04o, want 0600", info.Mode().Perm())
 	}
 }

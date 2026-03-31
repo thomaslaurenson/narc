@@ -1,19 +1,27 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-func TestLoadCreatesDefaultsWhenMissing(t *testing.T) {
+func TestLoadReturnsErrNotFoundWhenMissing(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
+	_, err := Load()
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Load: got %v, want ErrNotFound", err)
 	}
+}
+
+func TestDefaultsValues(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	cfg := Defaults()
 	if cfg.ProxyPort != DefaultProxyPort {
 		t.Errorf("ProxyPort: got %d, want %d", cfg.ProxyPort, DefaultProxyPort)
 	}
@@ -24,6 +32,10 @@ func TestLoadCreatesDefaultsWhenMissing(t *testing.T) {
 	wantLog := filepath.Join(tmp, ".narc", DefaultLogFile)
 	if cfg.LogFile != wantLog {
 		t.Errorf("LogFile: got %q, want %q", cfg.LogFile, wantLog)
+	}
+
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
 	}
 
 	// Verify narc.json was written with correct permissions.
@@ -46,7 +58,7 @@ func TestLoadRespectsExistingFile(t *testing.T) {
 	if err := os.MkdirAll(narcDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	content := `{"proxy_port": 8888, "output_file": "custom.json"}`
+	content := `{"proxy_port": 8888, "output_file": "/srv/narc/custom-rules.json"}`
 	if err := os.WriteFile(filepath.Join(narcDir, "narc.json"), []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -58,8 +70,8 @@ func TestLoadRespectsExistingFile(t *testing.T) {
 	if cfg.ProxyPort != 8888 {
 		t.Errorf("ProxyPort: got %d, want 8888", cfg.ProxyPort)
 	}
-	if cfg.OutputFile != "custom.json" {
-		t.Errorf("OutputFile: got %q, want custom.json", cfg.OutputFile)
+	if cfg.OutputFile != "/srv/narc/custom-rules.json" {
+		t.Errorf("OutputFile: got %q, want /srv/narc/custom-rules.json", cfg.OutputFile)
 	}
 }
 
@@ -88,6 +100,34 @@ func TestLoadFallsBackToDefaultsForZeroValues(t *testing.T) {
 		t.Errorf("OutputFile: got %q, want %q", cfg.OutputFile, wantOutput)
 	}
 	wantLog := filepath.Join(tmp, ".narc", DefaultLogFile)
+	if cfg.LogFile != wantLog {
+		t.Errorf("LogFile: got %q, want %q", cfg.LogFile, wantLog)
+	}
+}
+
+func TestLoadMigratesBareFilename(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	narcDir := filepath.Join(tmp, ".narc")
+	if err := os.MkdirAll(narcDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	// Bare filenames without any directory component are migrated to ~/.narc/.
+	content := `{"output_file": "rules.json", "log_file": "unmatched.log"}`
+	if err := os.WriteFile(filepath.Join(narcDir, "narc.json"), []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	wantOutput := filepath.Join(narcDir, "rules.json")
+	if cfg.OutputFile != wantOutput {
+		t.Errorf("OutputFile: got %q, want %q", cfg.OutputFile, wantOutput)
+	}
+	wantLog := filepath.Join(narcDir, "unmatched.log")
 	if cfg.LogFile != wantLog {
 		t.Errorf("LogFile: got %q, want %q", cfg.LogFile, wantLog)
 	}

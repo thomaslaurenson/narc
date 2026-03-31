@@ -6,18 +6,32 @@ import (
 	"testing"
 )
 
-func TestWriteUnmatchedCreateAndAppend(t *testing.T) {
+func TestUnmatchedLogWriteAndAppend(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "unmatched.log")
 
-	// First write — file should be created.
-	if err := WriteUnmatched(path, "https://example.com/first"); err != nil {
-		t.Fatalf("first WriteUnmatched: %v", err)
+	// First session: create file and write one entry.
+	log1, err := OpenUnmatchedLog(path)
+	if err != nil {
+		t.Fatalf("OpenUnmatchedLog (1st): %v", err)
+	}
+	if err := log1.Write("https://example.com/first"); err != nil {
+		t.Fatalf("first Write: %v", err)
+	}
+	if err := log1.Close(); err != nil {
+		t.Fatalf("Close (1st): %v", err)
 	}
 
-	// Second write — content should be appended, not overwritten.
-	if err := WriteUnmatched(path, "https://example.com/second"); err != nil {
-		t.Fatalf("second WriteUnmatched: %v", err)
+	// Second session: reopen and append — must not truncate.
+	log2, err := OpenUnmatchedLog(path)
+	if err != nil {
+		t.Fatalf("OpenUnmatchedLog (2nd): %v", err)
+	}
+	if err := log2.Write("https://example.com/second"); err != nil {
+		t.Fatalf("second Write: %v", err)
+	}
+	if err := log2.Close(); err != nil {
+		t.Fatalf("Close (2nd): %v", err)
 	}
 
 	data, err := os.ReadFile(path)

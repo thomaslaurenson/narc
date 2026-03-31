@@ -160,7 +160,7 @@ func TestNeedsRenewalExpiredCert(t *testing.T) {
 	if keyBlock == nil {
 		t.Fatal("no PEM block in key")
 	}
-	privateKey, err := x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
+	privateKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
 	if err != nil {
 		t.Fatalf("parse key: %v", err)
 	}

@@ -1,10 +1,10 @@
 # narc
 
-![Build Status](https://img.shields.io/github/actions/workflow/status/UoA-eResearch/narc/tag.yml?style=flat) ![Test Status](https://img.shields.io/github/actions/workflow/status/UoA-eResearch/narc/tag.yml?style=flat&label=test)
+![Build Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/narc/tag.yml?style=flat) ![Test Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/narc/tag.yml?style=flat&label=test)
 
-![Release Version](https://img.shields.io/github/v/release/UoA-eResearch/narc?style=flat)
+![Release Version](https://img.shields.io/github/v/release/thomaslaurenson/narc?style=flat)
 
-![Release downloads](https://img.shields.io/github/downloads/UoA-eResearch/narc/total?label=release_downloads)
+![Release downloads](https://img.shields.io/github/downloads/thomaslaurenson/narc/total?label=release_downloads)
 
 The Nectar Access Rules Creator, or `narc`, is a tool to help construct OpenStack Access Rules for Application Credentials.
 
@@ -21,7 +21,7 @@ The Nectar Access Rules Creator, or `narc`, is a tool to help construct OpenStac
 
 ## Installation
 
-Download a pre-built binary from the [releases page](https://github.com/UoA-eResearch/narc/releases), or install from source:
+Download a pre-built binary from the [releases page](https://github.com/thomaslaurenson/narc/releases), or install from source:
 
 ```sh
 go install github.com/thomaslaurenson/narc@latest
@@ -67,14 +67,19 @@ terraform apply
 as many commands as you like, then type `exit` or press Ctrl-D:
 
 ```sh
-narc shell
-# [narc] Proxy listening on http://127.0.0.1:9099
-# [narc] Recording OpenStack API calls — run commands as normal.
-# [narc] Shell: /bin/bash  |  Type 'exit' or press Ctrl-D to stop recording.
-$ openstack server list
-$ openstack network list
-$ exit
-# [narc] Done. 4 unique access rule(s) written to ~/.narc/access_rules.json
+thomas@t1000:~$ narc shell
+[narc] Proxy listening on http://127.0.0.1:9099
+
+╔════════════════════════════════════════╗
+║      narc is recording this session    ║
+║      Type 'exit' or Ctrl-D to stop     ║
+╚════════════════════════════════════════╝
+(narc) thomas@t1000:~$ openstack server list
+(narc) thomas@t1000:~$ openstack network list
+(narc) thomas@t1000:~$ exit
+
+[narc] Shutting down...
+[narc] Done. 6 unique access rule(s) written to /home/thomas/.narc/access_rules.json
 ```
 
 ## Usage Examples

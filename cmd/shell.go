@@ -3,13 +3,17 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
+	"github.com/creack/pty"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var shellOutputFileFlag string
@@ -21,9 +25,20 @@ var shellCmd = &cobra.Command{
 	Long: `Launches your default shell ($SHELL) with the narc proxy pre-configured.
 
 Run OpenStack commands as normal. Every API call is intercepted and recorded.
-Type 'exit' or press Ctrl-D to stop the session and write access_rules.json.`,
+Type 'exit' or press Ctrl-D to stop the session and write access_rules.json.
+
+Note: requires an interactive terminal (Linux, macOS, WSL). Windows native is
+not supported.`,
 	RunE: runShell,
 }
+
+// sessionBanner is printed at the start of a recording session. \r\n is used
+// because the outer terminal will be in raw mode when it is displayed.
+const sessionBanner = "" +
+	"\r\n╔════════════════════════════════════════╗\r\n" +
+	"║      narc is recording this session    ║\r\n" +
+	"║      Type 'exit' or Ctrl-D to stop     ║\r\n" +
+	"╚════════════════════════════════════════╝\r\n"
 
 func runShell(_ *cobra.Command, _ []string) error {
 	if shellLogFileFlag != "" {
@@ -33,7 +48,14 @@ func runShell(_ *cobra.Command, _ []string) error {
 		cfg.OutputFile = shellOutputFileFlag
 	}
 
-	p, az, certPath, err := startRecording()
+	var onUnmatched func(string, string)
+	if debugFlag {
+		onUnmatched = func(method, url string) {
+			fmt.Fprintf(os.Stderr, "[narc:debug] unmatched: %s %s\n", method, url)
+		}
+	}
+
+	p, az, certPath, unmatchedLog, err := startRecording(cfg.LogFile, onUnmatched)
 	if err != nil {
 		return err
 	}
@@ -43,134 +65,126 @@ func runShell(_ *cobra.Command, _ []string) error {
 		shellPath = "/bin/sh"
 	}
 
-	fmt.Fprintf(os.Stderr, "[narc] Recording OpenStack API calls — run commands as normal.\n")
-	fmt.Fprintf(os.Stderr, "[narc] Shell: %s  |  Type 'exit' or press Ctrl-D to stop recording.\n", shellPath)
-
-	// Set terminal window/tab title via OSC escape — works in any terminal
-	// emulator on Linux and macOS regardless of the shell in use.
-	fmt.Fprintf(os.Stderr, "\033]0;narc recording\007")
-
-	env := buildEnv(p.Port, certPath)
+	env := shellFilterEnv(buildEnv(p.Port, certPath))
 	env = append(env, "NARC_RECORDING=1")
 
-	sh, cleanup, err := prepareShell(shellPath, env)
+	// shellPath comes from $SHELL — the subprocess launch is intentional.
+	sh := exec.Command(shellPath) //nolint:gosec
+	sh.Env = env
+
+	// Start the shell attached to a pseudo-terminal so readline, tab-completion,
+	// and prompt colours all work correctly without shell-specific wiring.
+	ptmx, err := pty.Start(sh)
 	if err != nil {
-		return fmt.Errorf("prepare shell: %w", err)
+		p.Stop()
+		if unmatchedLog != nil {
+			_ = unmatchedLog.Close()
+		}
+		return fmt.Errorf("start pty: %w", err)
 	}
-	defer cleanup()
+	defer func() { _ = ptmx.Close() }()
 
-	// Ignore SIGINT in narc while the shell is running. Interactive shells handle
-	// Ctrl-C themselves (it cancels the current input line, not the session).
-	// The session ends when the user types 'exit' or presses Ctrl-D.
-	signal.Ignore(syscall.SIGINT)
+	// Match the pty size to the outer terminal so line-wrapping is correct.
+	if sz, err := pty.GetsizeFull(os.Stdin); err == nil {
+		_ = pty.Setsize(ptmx, sz)
+	}
 
-	runErr := sh.Run()
+	// Forward SIGWINCH so the pty tracks window resize events.
+	sigwinch := make(chan os.Signal, 1)
+	signal.Notify(sigwinch, syscall.SIGWINCH)
+	go func() {
+		for range sigwinch {
+			if sz, err := pty.GetsizeFull(os.Stdin); err == nil {
+				_ = pty.Setsize(ptmx, sz)
+			}
+		}
+	}()
 
-	signal.Reset(syscall.SIGINT)
+	// Put the outer terminal into raw mode: keystrokes pass directly to the pty
+	// without line-buffering, echo, or control-character processing by the host.
+	stdinFd := int(os.Stdin.Fd()) //nolint:gosec // fd is always a small non-negative value
+	oldState, err := term.MakeRaw(stdinFd)
+	if err != nil {
+		signal.Stop(sigwinch)
+		close(sigwinch)
+		_ = sh.Process.Kill()
+		_ = sh.Wait()
+		p.Stop()
+		if unmatchedLog != nil {
+			_ = unmatchedLog.Close()
+		}
+		return fmt.Errorf("set raw mode: %w", err)
+	}
+	restoreTerminal := func() { _ = term.Restore(stdinFd, oldState) }
+	defer restoreTerminal()
 
-	// Restore the terminal title to blank.
-	fmt.Fprintf(os.Stderr, "\033]0;\007")
+	// Banner printed after entering raw mode so \r\n renders correctly.
+	_, _ = os.Stderr.WriteString(sessionBanner)
+
+	// Bidirectional copy: user keystrokes → pty, shell output → stdout.
+	go func() { _, _ = io.Copy(ptmx, os.Stdin) }()
+	go func() { _, _ = io.Copy(os.Stdout, ptmx) }()
+
+	// Remind the user every 30 seconds that recording is still active.
+	reminder := time.NewTicker(30 * time.Second)
+	defer reminder.Stop()
+	go func() {
+		for range reminder.C {
+			_, _ = os.Stderr.WriteString("\r\n[narc] still recording… (type 'exit' or Ctrl-D to stop)\r\n")
+		}
+	}()
+
+	runErr := sh.Wait()
+
+	signal.Stop(sigwinch)
+	close(sigwinch)
+
+	// Restore terminal before printing shutdown messages so normal \n works.
+	restoreTerminal()
 
 	fmt.Fprintf(os.Stderr, "\n[narc] Shutting down...\n")
 	p.Stop()
+	if unmatchedLog != nil {
+		_ = unmatchedLog.Close()
+	}
 	writeRulesOnExit(az)
 
 	// Propagate the shell's exit code.
 	var exitErr *exec.ExitError
 	if errors.As(runErr, &exitErr) {
-		os.Exit(exitErr.ExitCode())
+		return &ExitCodeError{Code: exitErr.ExitCode()}
 	}
 	return nil
 }
 
-// prepareShell constructs an exec.Cmd for shellPath with a prompt that indicates
-// narc is active. Returns a cleanup function that removes any temporary files.
-//
-// Strategy by shell:
-//   - bash: spawned with --rcfile pointing to a temp file that sources ~/.bashrc
-//     then prepends "(narc) " to PS1. Works with vanilla prompts and powerline/starship
-//     because we prepend to whatever PS1 was set (including dynamic PS1 expressions).
-//   - zsh:  ZDOTDIR set to a temp dir whose .zshrc sources ~/.zshenv and ~/.zshrc,
-//     then registers a precmd hook via add-zsh-hook. Running after the user's own
-//     precmds (including starship/oh-my-zsh) means it always wins the final PROMPT value.
-//   - sh/dash/ksh and others: PS1 injected directly into the environment. These shells
-//     do not source rcfiles for interactive sessions, so the value sticks.
-//   - fish: fish uses functions not PS1; NARC_RECORDING=1 and the terminal title
-//     (set via OSC in runShell) serve as the indicator.
-func prepareShell(shellPath string, env []string) (*exec.Cmd, func(), error) {
-	noop := func() {}
-	name := filepath.Base(shellPath)
-	home, _ := os.UserHomeDir()
-
-	switch name {
-	case "bash":
-		f, err := os.CreateTemp("", "narc-bash-rc-*")
-		if err != nil {
-			return nil, noop, fmt.Errorf("create bash rcfile: %w", err)
+// shellFilterEnv removes VS Code shell-integration variables from env and
+// injects a best-effort narc prompt. VS Code injects PROMPT_COMMAND and
+// VSCODE_* vars that reference shell functions sourced only in the outer
+// terminal; they cause 'command not found' errors in the new pty shell.
+// PS1/PROMPT are set as a hint for bare bash/zsh; users with starship,
+// oh-my-zsh, etc. will see their own prompt (their rc overrides these), which
+// is acceptable — the session banner already makes the state clear.
+func shellFilterEnv(env []string) []string {
+	out := make([]string, 0, len(env)+2)
+	for _, kv := range env {
+		key, _, _ := strings.Cut(kv, "=")
+		if key == "PROMPT_COMMAND" || strings.HasPrefix(key, "VSCODE_") {
+			continue
 		}
-		cleanup := func() { _ = os.Remove(f.Name()) }
-
-		// Source the user's real .bashrc first so aliases, functions, and their
-		// existing PS1 (including starship/powerline expressions) are all loaded.
-		// Then prepend the (narc) indicator to whatever PS1 was set.
-		content := fmt.Sprintf("[ -f %q ] && source %q\n", home+"/.bashrc", home+"/.bashrc") +
-			"PS1=\"(narc) $PS1\"\n"
-		if _, err := f.WriteString(content); err != nil {
-			_ = f.Close()
-			cleanup()
-			return nil, noop, fmt.Errorf("write bash rcfile: %w", err)
-		}
-		_ = f.Close()
-
-		sh := exec.Command(shellPath, "--rcfile", f.Name()) //nolint:gosec
-		sh.Stdin = os.Stdin
-		sh.Stdout = os.Stdout
-		sh.Stderr = os.Stderr
-		sh.Env = env
-		return sh, cleanup, nil
-
-	case "zsh":
-		tmpDir, err := os.MkdirTemp("", "narc-zsh-*")
-		if err != nil {
-			return nil, noop, fmt.Errorf("create zsh tmpdir: %w", err)
-		}
-		cleanup := func() { _ = os.RemoveAll(tmpDir) }
-
-		// With ZDOTDIR overridden, zsh reads $ZDOTDIR/.zshrc instead of ~/.zshrc.
-		// We source the user's .zshenv and .zshrc first to preserve their full
-		// environment, then register a precmd hook that runs last — after any
-		// theme framework (starship, oh-my-zsh, prezto) has set PROMPT — and
-		// prepends the (narc) indicator.
-		content := fmt.Sprintf("[ -f %q ] && source %q\n", home+"/.zshenv", home+"/.zshenv") +
-			fmt.Sprintf("[ -f %q ] && source %q\n", home+"/.zshrc", home+"/.zshrc") +
-			"autoload -Uz add-zsh-hook\n" +
-			"_narc_prompt_prefix() { PROMPT=\"(narc) $PROMPT\"; }\n" +
-			"add-zsh-hook precmd _narc_prompt_prefix\n"
-		if err := os.WriteFile(filepath.Join(tmpDir, ".zshrc"), []byte(content), 0600); err != nil {
-			cleanup()
-			return nil, noop, fmt.Errorf("write zsh rcfile: %w", err)
-		}
-
-		env = append(env, "ZDOTDIR="+tmpDir)
-		sh := exec.Command(shellPath) //nolint:gosec
-		sh.Stdin = os.Stdin
-		sh.Stdout = os.Stdout
-		sh.Stderr = os.Stderr
-		sh.Env = env
-		return sh, cleanup, nil
-
-	default:
-		// sh, dash, ksh: PS1 in the environment is respected for interactive shells
-		// and is not overridden by rcfile sourcing, so it sticks.
-		// fish: PS1 is ignored; NARC_RECORDING=1 and the terminal title are the indicators.
-		env = append(env, "PS1=(narc) $ ")
-		sh := exec.Command(shellPath) //nolint:gosec
-		sh.Stdin = os.Stdin
-		sh.Stdout = os.Stdout
-		sh.Stderr = os.Stderr
-		sh.Env = env
-		return sh, noop, nil
+		out = append(out, kv)
 	}
+	out = append(out,
+		// best-effort for bare bash/zsh with no rc file or a rc that doesn't
+		// set a prompt (picked up before .bashrc/.zshrc runs).
+		`PS1=(narc) \u@\h:\w\$ `,
+		`PROMPT=(narc) %n@%m:%~%# `,
+		// bash: runs once before the first prompt, after .bashrc has already
+		// set PS1 to its final value. Prepends "(narc) " to whatever PS1 is
+		// at that point, then unsets itself so it never fires again.
+		// This is a no-op for zsh and other shells that ignore PROMPT_COMMAND.
+		`PROMPT_COMMAND=PS1="(narc) $PS1"; unset PROMPT_COMMAND`,
+	)
+	return out
 }
 
 func init() {

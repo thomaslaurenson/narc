@@ -1,8 +1,9 @@
 package certmgr
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -20,7 +21,6 @@ import (
 const (
 	caCertFilename  = "ca.pem"
 	caKeyFilename   = "ca.key"
-	rsaKeyBits      = 4096
 	certValidYears  = 2
 	certRenewBefore = 30 * 24 * time.Hour
 )
@@ -33,7 +33,7 @@ func CACertPath() (string, error) {
 	return filepath.Join(dir, caCertFilename), nil
 }
 
-func CAKeyPath() (string, error) {
+func caKeyPath() (string, error) {
 	dir, err := config.NarcDirPath()
 	if err != nil {
 		return "", err
@@ -51,7 +51,7 @@ func EnsureCACert() error {
 	if err != nil {
 		return err
 	}
-	keyPath, err := CAKeyPath()
+	keyPath, err := caKeyPath()
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func LoadTLSCert() (tls.Certificate, error) {
 	if err != nil {
 		return tls.Certificate{}, err
 	}
-	keyPath, err := CAKeyPath()
+	keyPath, err := caKeyPath()
 	if err != nil {
 		return tls.Certificate{}, err
 	}
@@ -103,9 +103,9 @@ func LoadTLSCert() (tls.Certificate, error) {
 }
 
 func generateCACert(certPath, keyPath string) error {
-	key, err := rsa.GenerateKey(rand.Reader, rsaKeyBits)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return fmt.Errorf("generate RSA key: %w", err)
+		return fmt.Errorf("generate EC key: %w", err)
 	}
 
 	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
@@ -136,8 +136,11 @@ func generateCACert(certPath, keyPath string) error {
 		return fmt.Errorf("write cert: %w", err)
 	}
 
-	keyDER := x509.MarshalPKCS1PrivateKey(key)
-	if err := writePEM(keyPath, "RSA PRIVATE KEY", keyDER, 0600); err != nil {
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return fmt.Errorf("marshal EC key: %w", err)
+	}
+	if err := writePEM(keyPath, "EC PRIVATE KEY", keyDER, 0600); err != nil {
 		return fmt.Errorf("write key: %w", err)
 	}
 

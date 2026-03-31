@@ -1,5 +1,5 @@
 ---
-name: Lint and Test
+name: Lint
 
 on: workflow_call
 
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 jobs:
-  go_lint_test:
+  go_lint:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository code
@@ -44,6 +44,3 @@ jobs:
       #   uses: golang/govulncheck-action@v1
       #   with:
       #     go-version-file: go.mod
-
-      - name: Run tests
-        run: go test -race -count=1 ./...

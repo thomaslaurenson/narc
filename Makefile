@@ -4,17 +4,21 @@ BINARY  := narc
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -s -w -X github.com/thomaslaurenson/narc/cmd.Version=$(VERSION)
 
-.PHONY: help build install fmt lint test test_verbose test_coverage vet clean snapshot release_check tag_release
+.PHONY: help build install fmt fmt_check mod_check lint test test_verbose test_coverage vet ci clean snapshot release_check tag_release
 
 help:
 	@echo "Available targets:"
 	@echo "  build           Build the narc binary"
 	@echo "  install         Install narc to GOPATH/bin"
 	@echo "  fmt             Format all Go source files with gofmt"
+	@echo "  fmt_check       Check formatting without writing (mirrors CI)"
+	@echo "  mod_check       Check go.mod/go.sum are tidy (mirrors CI)"
 	@echo "  lint            Run golangci-lint"
-	@echo "  test            Run all tests"
+	@echo "  test            Run all tests (with -race -count=1)"
 	@echo "  test_verbose    Run all tests with verbose output"
+	@echo "  test_coverage   Run tests with coverage report"
 	@echo "  vet             Run go vet"
+	@echo "  ci              Run all CI checks locally (fmt_check, mod_check, lint, test)"
 	@echo "  clean           Remove build artifacts"
 	@echo "  snapshot        Build a local multi-platform snapshot via GoReleaser"
 	@echo "  release_check   Validate .goreleaser.yml without publishing"
@@ -24,19 +28,31 @@ build:
 	go build -ldflags="$(LDFLAGS)" -o $(BINARY) .
 
 install:
-	go install .
+	go install -ldflags="$(LDFLAGS)" .
 
 fmt:
 	gofmt -w .
+
+fmt_check:
+	@unformatted=$$(gofmt -l .); \
+	if [ -n "$$unformatted" ]; then \
+		echo "The following files are not gofmt'd:"; \
+		echo "$$unformatted"; \
+		exit 1; \
+	fi
+
+mod_check:
+	go mod tidy
+	git diff --exit-code go.mod go.sum
 
 lint:
 	golangci-lint run
 
 test:
-	go test ./...
+	go test -race -count=1 ./...
 
 test_verbose:
-	go test -v ./...
+	go test -race -count=1 -v ./...
 
 test_coverage:
 	go test -coverpkg=./internal/... -coverprofile=coverage.out ./...
@@ -45,6 +61,8 @@ test_coverage:
 
 vet:
 	go vet ./...
+
+ci: fmt_check mod_check lint test
 
 clean:
 	rm -f $(BINARY)
