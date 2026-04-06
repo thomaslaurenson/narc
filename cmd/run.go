@@ -7,8 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -62,6 +62,9 @@ func runRun(_ *cobra.Command, args []string) error {
 	if outputFileFlag != "" {
 		cfg.OutputFile = outputFileFlag
 	}
+	if err := ensureOutputDir(cfg.OutputFile); err != nil {
+		return err
+	}
 
 	var onUnmatched func(string, string)
 	if debugFlag {
@@ -88,7 +91,10 @@ func runRun(_ *cobra.Command, args []string) error {
 		_ = unmatchedLog.Close()
 	}
 	writeRulesOnExit(az)
-	return &ExitCodeError{Code: exitCode}
+	if exitCode != 0 {
+		return &ExitCodeError{Code: exitCode}
+	}
+	return nil
 }
 
 // startRecording creates the catalog, analyzer, and proxy, starts the proxy,
@@ -146,6 +152,17 @@ func writeRulesOnExit(az *analyzer.Analyzer) {
 	fmt.Fprintf(os.Stderr, "[narc] Done. %d unique access rule(s) written to %s\n", n, cfg.OutputFile)
 }
 
+// ensureOutputDir checks that the directory containing outPath exists, and
+// returns a clear error if it does not. This surfaces misconfigured --output
+// paths early, before the proxy runs, rather than failing silently at the end.
+func ensureOutputDir(outPath string) error {
+	dir := filepath.Dir(outPath)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return fmt.Errorf("output directory does not exist: %s", dir)
+	}
+	return nil
+}
+
 // buildEnv returns a copy of the current process environment with all proxy-related
 // vars removed and replaced by the narc proxy settings.
 func buildEnv(port int, caCertPath string) []string {
@@ -196,7 +213,7 @@ func runSubprocess(args []string, env []string, showOutput bool) int {
 	go func() { done <- cmd.Wait() }()
 
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(quit, shutdownSignals...)
 	defer signal.Stop(quit)
 
 	var waitErr error
@@ -229,7 +246,7 @@ func runBackground(p *proxy.Proxy, az *analyzer.Analyzer, certPath string, unmat
 	printProxyEnv(p.Port, certPath)
 
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(quit, shutdownSignals...)
 	<-quit
 
 	fmt.Fprintf(os.Stderr, "\n[narc] Shutting down...\n")
@@ -241,9 +258,11 @@ func runBackground(p *proxy.Proxy, az *analyzer.Analyzer, certPath string, unmat
 }
 
 // printProxyEnv prints shell export statements for the narc proxy environment.
+// Values are single-quoted so paths with spaces or special characters are safe
+// to copy-paste directly into a POSIX shell.
 func printProxyEnv(port int, certPath string) {
 	for _, v := range proxyEnvVars(port, certPath) {
-		fmt.Fprintf(os.Stderr, "  export %s=%s\n", v.key, v.value)
+		fmt.Fprintf(os.Stderr, "  export %s='%s'\n", v.key, v.value)
 	}
 }
 
