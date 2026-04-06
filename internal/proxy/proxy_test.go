@@ -11,6 +11,7 @@ import (
 )
 
 func TestIsKeystoneAuthPath(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		path string
 		want bool

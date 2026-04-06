@@ -151,6 +151,8 @@ func (p *Proxy) Start() error {
 		Addr:              addr,
 		Handler:           proxyServer,
 		ReadHeaderTimeout: 30 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      60 * time.Second,
 		BaseContext: func(_ net.Listener) context.Context {
 			return bgCtx
 		},
