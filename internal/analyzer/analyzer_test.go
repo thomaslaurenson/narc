@@ -33,6 +33,7 @@ func buildCatalog(t *testing.T, entries [][2]string) *catalog.Catalog {
 }
 
 func TestNormalizePath(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		rawURL  string
@@ -107,6 +108,7 @@ func TestNormalizePath(t *testing.T) {
 }
 
 func TestProcessDeduplication(t *testing.T) {
+	t.Parallel()
 	cat := buildCatalog(t, [][2]string{
 		{"compute", "https://compute.example.com/"},
 	})
@@ -124,6 +126,7 @@ func TestProcessDeduplication(t *testing.T) {
 }
 
 func TestProcessOnNewCallback(t *testing.T) {
+	t.Parallel()
 	cat := buildCatalog(t, [][2]string{
 		{"compute", "https://compute.example.com/"},
 		{"network", "https://network.example.com/"},
@@ -153,6 +156,7 @@ func TestProcessOnNewCallback(t *testing.T) {
 // with the mutex released, so calling Rules() or Process() inside the callback
 // does not deadlock.
 func TestProcessOnNewCallbackCanCallRules(t *testing.T) {
+	t.Parallel()
 	cat := buildCatalog(t, [][2]string{
 		{"compute", "https://compute.example.com/"},
 	})
@@ -178,6 +182,7 @@ func TestProcessOnNewCallbackCanCallRules(t *testing.T) {
 }
 
 func TestProcessUnknownURL(t *testing.T) {
+	t.Parallel()
 	cat := buildCatalog(t, [][2]string{
 		{"compute", "https://compute.example.com/"},
 	})
@@ -191,6 +196,7 @@ func TestProcessUnknownURL(t *testing.T) {
 }
 
 func TestRulesReturnsCopy(t *testing.T) {
+	t.Parallel()
 	cat := buildCatalog(t, [][2]string{
 		{"compute", "https://compute.example.com/"},
 	})
@@ -208,6 +214,7 @@ func TestRulesReturnsCopy(t *testing.T) {
 }
 
 func TestWriteRulesPermissions(t *testing.T) {
+	t.Parallel()
 	cat := buildCatalog(t, [][2]string{
 		{"compute", "https://compute.example.com/"},
 	})
@@ -225,5 +232,23 @@ func TestWriteRulesPermissions(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0600 {
 		t.Errorf("file permissions: got %04o, want 0600", info.Mode().Perm())
+	}
+}
+
+func TestProcessDeduplicationAcrossServices(t *testing.T) {
+	t.Parallel()
+	cat := buildCatalog(t, [][2]string{
+		{"compute", "https://compute.example.com/"},
+		{"network", "https://network.example.com/"},
+	})
+	az := New(cat, nil, nil, nil)
+
+	// Same method+path but different services — both must produce rules.
+	az.Process("GET", "https://compute.example.com/v2/extensions")
+	az.Process("GET", "https://network.example.com/v2/extensions")
+
+	rules := az.Rules()
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 rules (one per service), got %d", len(rules))
 	}
 }
