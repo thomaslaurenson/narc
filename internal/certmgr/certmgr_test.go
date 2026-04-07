@@ -14,6 +14,7 @@ import (
 // TestWritePEMAtomicCleanup verifies that a failed writePEM leaves no .tmp
 // artefact and does not overwrite any existing destination file.
 func TestWritePEMAtomicCleanup(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "ca.pem")
 
@@ -47,6 +48,7 @@ func TestWritePEMAtomicCleanup(t *testing.T) {
 }
 
 func TestGenerateCACert(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	certPath := filepath.Join(dir, "ca.pem")
 	keyPath := filepath.Join(dir, "ca.key")
@@ -99,34 +101,39 @@ func TestGenerateCACert(t *testing.T) {
 }
 
 func TestEnsureCACertIdempotent(t *testing.T) {
-	dir := t.TempDir()
-	certPath := filepath.Join(dir, "ca.pem")
-	keyPath := filepath.Join(dir, "ca.key")
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
 
-	if err := generateCACert(certPath, keyPath); err != nil {
-		t.Fatalf("first generateCACert: %v", err)
+	// First call: generates the cert.
+	if err := EnsureCACert(); err != nil {
+		t.Fatalf("first EnsureCACert: %v", err)
 	}
-	firstStat, _ := os.Stat(certPath)
 
-	ensureFn := func() error {
-		_, certErr := os.Stat(certPath)
-		_, keyErr := os.Stat(keyPath)
-		if os.IsNotExist(certErr) || os.IsNotExist(keyErr) {
-			return generateCACert(certPath, keyPath)
-		}
-		return nil
+	certPath, err := CACertPath()
+	if err != nil {
+		t.Fatalf("CACertPath: %v", err)
 	}
-	if err := ensureFn(); err != nil {
-		t.Fatalf("second ensure: %v", err)
+	firstStat, err := os.Stat(certPath)
+	if err != nil {
+		t.Fatalf("stat after first EnsureCACert: %v", err)
 	}
-	secondStat, _ := os.Stat(certPath)
+
+	// Second call: must not regenerate the cert.
+	if err := EnsureCACert(); err != nil {
+		t.Fatalf("second EnsureCACert: %v", err)
+	}
+	secondStat, err := os.Stat(certPath)
+	if err != nil {
+		t.Fatalf("stat after second EnsureCACert: %v", err)
+	}
 
 	if firstStat.ModTime() != secondStat.ModTime() {
-		t.Error("EnsureCACert overwrote existing cert — should be idempotent")
+		t.Error("EnsureCACert regenerated cert on second call — should be idempotent")
 	}
 }
 
 func TestNeedsRenewalExpiredCert(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	certPath := filepath.Join(dir, "ca.pem")
 	keyPath := filepath.Join(dir, "ca.key")
@@ -184,6 +191,7 @@ func TestNeedsRenewalExpiredCert(t *testing.T) {
 }
 
 func TestNeedsRenewalFreshCert(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	certPath := filepath.Join(dir, "ca.pem")
 	keyPath := filepath.Join(dir, "ca.key")
