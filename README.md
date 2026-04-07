@@ -2,9 +2,9 @@
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/narc/tag.yml?style=flat) ![Test Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/narc/tag.yml?style=flat&label=test)
 
-![Release Version](https://img.shields.io/github/v/release/thomaslaurenson/narc?style=flat)
+![Release Version](https://img.shields.io/github/v/release/thomaslaurenson/narc?style=flat) ![Release downloads](https://img.shields.io/github/downloads/thomaslaurenson/narc/total?label=downloads)
 
-![Release downloads](https://img.shields.io/github/downloads/thomaslaurenson/narc/total?label=release_downloads)
+![Go Version](https://img.shields.io/github/go-mod/go-version/thomaslaurenson/narc) ![Code Coverage](https://img.shields.io/badge/coverage-74.9%25-blue)
 
 The Nectar Access Rules Creator, or `narc`, is a tool to help construct OpenStack Access Rules for Application Credentials.
 
