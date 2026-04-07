@@ -31,7 +31,14 @@ func (l *UnmatchedLog) Write(rawURL string) error {
 	return err
 }
 
-// Close closes the underlying file handle.
+// Close flushes and closes the underlying file handle.
 func (l *UnmatchedLog) Close() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.f.Sync(); err != nil {
+		// Best-effort: still attempt to close even if sync fails.
+		_ = l.f.Close()
+		return err
+	}
 	return l.f.Close()
 }

@@ -83,11 +83,24 @@ func (c *Catalog) Lookup(requestURL string) (Entry, bool) {
 
 	// entries are sorted longest-first by Update, so the first match is the longest prefix.
 	for _, e := range c.entries {
-		if strings.HasPrefix(normalized, e.BaseURL) {
+		if hasURLPrefix(normalized, e.BaseURL) {
 			return e, true
 		}
 	}
 	return Entry{}, false
+}
+
+// hasURLPrefix reports whether s starts with prefix and the match ends at a
+// URL path boundary — i.e., prefix ends with '/', or s has no further characters,
+// or the next character in s after the prefix is '/'.
+// This prevents a catalog entry like "https://api.example.com/volume" (no trailing
+// slash) from matching a request to "https://api.example.com/volumev3/snapshots".
+func hasURLPrefix(s, prefix string) bool {
+	if !strings.HasPrefix(s, prefix) {
+		return false
+	}
+	rest := s[len(prefix):]
+	return len(rest) == 0 || rest[0] == '/' || strings.HasSuffix(prefix, "/")
 }
 
 // stripDefaultPort removes the explicit port from a URL when it is the default

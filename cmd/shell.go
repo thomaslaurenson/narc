@@ -1,3 +1,5 @@
+//go:build !windows
+
 package cmd
 
 import (
@@ -46,6 +48,9 @@ func runShell(_ *cobra.Command, _ []string) error {
 	}
 	if shellOutputFileFlag != "" {
 		cfg.OutputFile = shellOutputFileFlag
+	}
+	if err := ensureOutputDir(cfg.OutputFile); err != nil {
+		return err
 	}
 
 	var onUnmatched func(string, string)
@@ -178,10 +183,13 @@ func shellFilterEnv(env []string) []string {
 		// set a prompt (picked up before .bashrc/.zshrc runs).
 		`PS1=(narc) \u@\h:\w\$ `,
 		`PROMPT=(narc) %n@%m:%~%# `,
-		// bash: runs once before the first prompt, after .bashrc has already
-		// set PS1 to its final value. Prepends "(narc) " to whatever PS1 is
-		// at that point, then unsets itself so it never fires again.
-		// This is a no-op for zsh and other shells that ignore PROMPT_COMMAND.
+		// PROMPT_COMMAND is intentionally filtered out above and then re-added here
+		// with a narc-specific value. Any PROMPT_COMMAND inherited from the outer
+		// shell (e.g. VS Code shell integration) is removed first to prevent
+		// 'command not found' errors for shell functions that exist only in the outer
+		// terminal. The new value prepends "(narc) " to whatever PS1 the shell's rc
+		// file sets, then unsets itself so it only fires once.
+		// This is a no-op for zsh and fish, which ignore PROMPT_COMMAND entirely.
 		`PROMPT_COMMAND=PS1="(narc) $PS1"; unset PROMPT_COMMAND`,
 	)
 	return out

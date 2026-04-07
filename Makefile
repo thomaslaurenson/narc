@@ -3,6 +3,7 @@ SHELL := /bin/bash
 BINARY  := narc
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -s -w -X github.com/thomaslaurenson/narc/cmd.Version=$(VERSION)
+GOFMT   := $(shell go env GOROOT)/bin/gofmt
 
 .PHONY: help build install fmt fmt_check mod_check lint test test_verbose test_coverage vet ci clean snapshot release_check tag_release
 
@@ -31,10 +32,10 @@ install:
 	go install -ldflags="$(LDFLAGS)" .
 
 fmt:
-	gofmt -w .
+	$(GOFMT) -w .
 
 fmt_check:
-	@unformatted=$$(gofmt -l .); \
+	@unformatted=$$($(GOFMT) -l .); \
 	if [ -n "$$unformatted" ]; then \
 		echo "The following files are not gofmt'd:"; \
 		echo "$$unformatted"; \

@@ -23,6 +23,7 @@ func svcEntry(svcType, iface, url string) map[string]any {
 }
 
 func TestUpdateAndLookup(t *testing.T) {
+	t.Parallel()
 	c := NewCatalog()
 	if c.IsReady() {
 		t.Fatal("should not be ready before Update")
@@ -56,6 +57,7 @@ func TestUpdateAndLookup(t *testing.T) {
 }
 
 func TestUpdateReplacesEntries(t *testing.T) {
+	t.Parallel()
 	c := NewCatalog()
 	if err := c.Update(keystoneBody(t, []map[string]any{svcEntry("compute", "public", "https://old.example.com/")})); err != nil {
 		t.Fatalf("first Update: %v", err)
@@ -76,6 +78,7 @@ func TestUpdateReplacesEntries(t *testing.T) {
 }
 
 func TestUpdateInvalidJSON(t *testing.T) {
+	t.Parallel()
 	c := NewCatalog()
 	if err := c.Update([]byte("not json")); err == nil {
 		t.Error("Update with invalid JSON should return error")
@@ -83,6 +86,7 @@ func TestUpdateInvalidJSON(t *testing.T) {
 }
 
 func TestUpdateSkipsEmptyFields(t *testing.T) {
+	t.Parallel()
 	c := NewCatalog()
 	body := keystoneBody(t, []map[string]any{
 		{"type": "compute", "endpoints": []map[string]any{{"interface": "public", "url": ""}}},
@@ -97,6 +101,7 @@ func TestUpdateSkipsEmptyFields(t *testing.T) {
 }
 
 func TestLookupStripsDefaultPort(t *testing.T) {
+	t.Parallel()
 	c := NewCatalog()
 	body := keystoneBody(t, []map[string]any{
 		svcEntry("identity", "public", "https://identity.example.com/"),
@@ -136,6 +141,7 @@ func TestLookupStripsDefaultPort(t *testing.T) {
 // TestLookupLongestPrefix verifies that when two catalog entries share a URL prefix,
 // the one with the longer (more specific) BaseURL wins.
 func TestLookupLongestPrefix(t *testing.T) {
+	t.Parallel()
 	c := NewCatalog()
 	body := keystoneBody(t, []map[string]any{
 		svcEntry("volumev3", "public", "https://api.example.com/volume/v3/"),
@@ -151,5 +157,20 @@ func TestLookupLongestPrefix(t *testing.T) {
 	}
 	if e.ServiceType != "volumev3" {
 		t.Errorf("Lookup: got service %q, want %q (longer prefix should win)", e.ServiceType, "volumev3")
+	}
+}
+
+func TestLookupNoBoundaryFalseMatch(t *testing.T) {
+	t.Parallel()
+	c := NewCatalog()
+	body := keystoneBody(t, []map[string]any{
+		svcEntry("volume", "public", "https://api.example.com/volume"),
+	})
+	if err := c.Update(body); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	_, ok := c.Lookup("https://api.example.com/volumev3/snapshots")
+	if ok {
+		t.Error("Lookup should not match /volumev3/ against BaseURL /volume (no trailing slash)")
 	}
 }

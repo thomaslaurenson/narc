@@ -2,7 +2,7 @@ name: Push
 
 on:
   push:
-    tags-ignore:
+    branches:
       - "**"
 
 permissions:

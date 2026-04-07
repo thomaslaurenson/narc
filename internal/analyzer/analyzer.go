@@ -74,7 +74,7 @@ func (a *Analyzer) Process(method, rawURL string) {
 	}
 
 	path := normalizePath(rawURL, entry.BaseURL)
-	key := method + "|" + path
+	key := entry.ServiceType + "|" + method + "|" + path
 
 	a.mu.Lock()
 	if a.seen[key] {
