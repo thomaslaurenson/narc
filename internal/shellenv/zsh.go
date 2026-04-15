@@ -30,11 +30,6 @@ func buildZshEnv(kind ShellKind, baseEnv []string) (env []string, cleanup func()
 		return nil, func() {}, fmt.Errorf("create temp zsh dir: %w", err)
 	}
 
-	if err := os.Chmod(tmpDir, 0700); err != nil {
-		_ = os.RemoveAll(tmpDir)
-		return nil, func() {}, fmt.Errorf("chmod temp zsh dir: %w", err)
-	}
-
 	var rcContent string
 	if kind == ShellZshOMZ {
 		rcContent = zshRCOMZ
