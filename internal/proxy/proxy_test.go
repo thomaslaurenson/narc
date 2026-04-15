@@ -31,6 +31,7 @@ func TestIsKeystoneAuthPath(t *testing.T) {
 }
 
 func TestProxyNewNilCatalogAndHandler(t *testing.T) {
+	ResetForTesting()
 	t.Setenv("HOME", t.TempDir())
 
 	p, err := New(0, false, nil, nil, nil)
@@ -39,6 +40,21 @@ func TestProxyNewNilCatalogAndHandler(t *testing.T) {
 	}
 	if p == nil {
 		t.Fatal("New returned nil proxy")
+	}
+}
+
+func TestProxyNewDoubleInstantiation(t *testing.T) {
+	ResetForTesting()
+	t.Setenv("HOME", t.TempDir())
+
+	_, err := New(0, false, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("first New: %v", err)
+	}
+
+	_, err = New(0, false, nil, nil, nil)
+	if err == nil {
+		t.Fatal("second New: expected an error, got nil")
 	}
 }
 
@@ -52,6 +68,7 @@ func (m *mockHandler) HandleRequest(method, rawURL string) {
 }
 
 func TestProxyIntegration(t *testing.T) {
+	ResetForTesting()
 	t.Setenv("HOME", t.TempDir())
 
 	// Start a trivial target HTTP server.

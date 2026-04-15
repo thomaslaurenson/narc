@@ -91,7 +91,7 @@ func (c *Catalog) Lookup(requestURL string) (Entry, bool) {
 }
 
 // hasURLPrefix reports whether s starts with prefix and the match ends at a
-// URL path boundary — i.e., prefix ends with '/', or s has no further characters,
+// URL path boundary - i.e., prefix ends with '/', or s has no further characters,
 // or the next character in s after the prefix is '/'.
 // This prevents a catalog entry like "https://api.example.com/volume" (no trailing
 // slash) from matching a request to "https://api.example.com/volumev3/snapshots".

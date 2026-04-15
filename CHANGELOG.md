@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.1 - 2026-04-15
+
+### Added
+
+- Shell prompt integration for oh-my-zsh and fish
+
+### Fixed
+
+- Shell prompt integration for bash and zsh
+- Running `narc shell` inside VS Code no longer crashes the terminal
+- Starting `narc shell` inside an existing `narc shell` session now exits
+- Terminal state is now restored exactly once on exit
+
 ## v0.5.0 - 2026-04-07
 
 ### Added

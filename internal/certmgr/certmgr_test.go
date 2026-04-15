@@ -128,7 +128,7 @@ func TestEnsureCACertIdempotent(t *testing.T) {
 	}
 
 	if firstStat.ModTime() != secondStat.ModTime() {
-		t.Error("EnsureCACert regenerated cert on second call — should be idempotent")
+		t.Error("EnsureCACert regenerated cert on second call - should be idempotent")
 	}
 }
 

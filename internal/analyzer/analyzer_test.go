@@ -138,7 +138,7 @@ func TestProcessOnNewCallback(t *testing.T) {
 	}, nil)
 
 	az.Process("GET", "https://compute.example.com/v2.1/servers")
-	az.Process("GET", "https://compute.example.com/v2.1/servers") // duplicate — callback not called again
+	az.Process("GET", "https://compute.example.com/v2.1/servers") // duplicate - callback not called again
 	az.Process("GET", "https://network.example.com/v2.0/networks")
 
 	if len(called) != 2 {
@@ -243,7 +243,7 @@ func TestProcessDeduplicationAcrossServices(t *testing.T) {
 	})
 	az := New(cat, nil, nil, nil)
 
-	// Same method+path but different services — both must produce rules.
+	// Same method+path but different services - both must produce rules.
 	az.Process("GET", "https://compute.example.com/v2/extensions")
 	az.Process("GET", "https://network.example.com/v2/extensions")
 

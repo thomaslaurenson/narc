@@ -122,7 +122,7 @@ func TestLookupStripsDefaultPort(t *testing.T) {
 		{"http://compute.example.com:80/v2.1/servers", "compute", true},
 		// Non-default port must NOT be stripped
 		{"https://identity.example.com:8443/v3/users", "", false},
-		// Without port — still matches
+		// Without port - still matches
 		{"https://identity.example.com/v3/auth/tokens", "identity", true},
 	}
 
