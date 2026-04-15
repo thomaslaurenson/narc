@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -138,7 +139,10 @@ func runShell(_ *cobra.Command, _ []string) error {
 		}
 		return fmt.Errorf("set raw mode: %w", err)
 	}
-	restoreTerminal := func() { _ = term.Restore(stdinFd, oldState) }
+	var restoreOnce sync.Once
+	restoreTerminal := func() {
+		restoreOnce.Do(func() { _ = term.Restore(stdinFd, oldState) })
+	}
 	defer restoreTerminal()
 
 	// Banner printed after entering raw mode so \r\n renders correctly.

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/elazarl/goproxy"
@@ -38,6 +39,12 @@ type Proxy struct {
 	cancel       context.CancelFunc
 }
 
+// proxyCreated guards against creating more than one Proxy per process.
+// goproxy.GoproxyCa is a package-level global; a second New call would
+// silently overwrite the CA used by the first, causing hard-to-diagnose
+// TLS failures.
+var proxyCreated atomic.Bool
+
 // New creates a Proxy. It ensures the CA certificate exists and loads it.
 // cat and handler may be nil; when non-nil, cat is used to intercept Keystone
 // token responses and handler is notified of every request.
@@ -45,6 +52,10 @@ type Proxy struct {
 // NOTE: goproxy.GoproxyCa is a package-level global, so only one Proxy
 // instance per process is supported.
 func New(port int, debug bool, cat *catalog.Catalog, handler RequestHandler, unmatchedLog *output.UnmatchedLog) (*Proxy, error) {
+	if !proxyCreated.CompareAndSwap(false, true) {
+		return nil, fmt.Errorf("only one Proxy instance is supported per process (goproxy.GoproxyCa is a package-level global)")
+	}
+
 	if err := certmgr.EnsureCACert(); err != nil {
 		return nil, fmt.Errorf("ensure CA cert: %w", err)
 	}
