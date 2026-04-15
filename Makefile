@@ -7,34 +7,19 @@ GOFMT   := $(shell go env GOROOT)/bin/gofmt
 
 .PHONY: help build install fmt fmt_check mod_check lint test test_verbose test_coverage vet ci clean snapshot release_check tag_release
 
-help:
-	@echo "Available targets:"
-	@echo "  build           Build the narc binary"
-	@echo "  install         Install narc to GOPATH/bin"
-	@echo "  fmt             Format all Go source files with gofmt"
-	@echo "  fmt_check       Check formatting without writing (mirrors CI)"
-	@echo "  mod_check       Check go.mod/go.sum are tidy (mirrors CI)"
-	@echo "  lint            Run golangci-lint"
-	@echo "  test            Run all tests (with -race -count=1)"
-	@echo "  test_verbose    Run all tests with verbose output"
-	@echo "  test_coverage   Run tests with coverage report"
-	@echo "  vet             Run go vet"
-	@echo "  ci              Run all CI checks locally (fmt_check, mod_check, lint, test)"
-	@echo "  clean           Remove build artifacts"
-	@echo "  snapshot        Build a local multi-platform snapshot via GoReleaser"
-	@echo "  release_check   Validate .goreleaser.yml without publishing"
-	@echo "  tag_release     Tag a release and push to origin"
+help: ## Show this help message
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
 
-build:
+build: ## Build the narc binary
 	go build -ldflags="$(LDFLAGS)" -o $(BINARY) .
 
-install:
+install: ## Install narc to GOPATH/bin
 	go install -ldflags="$(LDFLAGS)" .
 
-fmt:
+fmt: ## Format all Go source files with gofmt
 	$(GOFMT) -w .
 
-fmt_check:
+fmt_check: ## Check formatting without writing
 	@unformatted=$$($(GOFMT) -l .); \
 	if [ -n "$$unformatted" ]; then \
 		echo "The following files are not gofmt'd:"; \
@@ -42,50 +27,35 @@ fmt_check:
 		exit 1; \
 	fi
 
-mod_check:
+mod_check: ## Check go.mod/go.sum are tidy
 	go mod tidy
 	git diff --exit-code go.mod go.sum
 
-lint:
+lint: ## Run golangci-lint
 	golangci-lint run
 
-test:
+test: ## Run all tests (with -race -count=1)
 	go test -race -count=1 ./...
 
-test_verbose:
+test_verbose: ## Run all tests with verbose output
 	go test -race -count=1 -v ./...
 
-test_coverage:
+test_coverage: ## Run tests with coverage report
 	go test -coverpkg=./internal/... -coverprofile=coverage.out ./...
 	go tool cover -func=coverage.out
 	rm coverage.out
 
-vet:
+vet: ## Run go vet
 	go vet ./...
 
-ci: fmt_check mod_check lint test
+ci: fmt_check mod_check lint test ## Run all CI checks locally
 
-clean:
+clean: ## Remove build artifacts
 	rm -f $(BINARY)
 	rm -rf dist/
 
-snapshot:
+snapshot: ## Build a local multi-platform snapshot via GoReleaser
 	goreleaser release --snapshot --clean
 
-release_check:
+release_check: ## Validate .goreleaser.yml without publishing
 	goreleaser check
-
-tag_release:
-	@read -p "Enter version tag (e.g. v0.1.0): " TAG; \
-	echo "[*] Tagging: $$TAG"; \
-	read -p "[*] Tag and push? (y/N) " yn; \
-	case $$yn in \
-		[yY]*) \
-			git tag "$$TAG"; \
-			git push origin "$$TAG"; \
-			echo "[*] Released $$TAG"; \
-			;; \
-		*) \
-			echo "[*] Aborted"; \
-			;; \
-	esac

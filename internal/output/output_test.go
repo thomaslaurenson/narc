@@ -23,7 +23,7 @@ func TestUnmatchedLogWriteAndAppend(t *testing.T) {
 		t.Fatalf("Close (1st): %v", err)
 	}
 
-	// Second session: reopen and append — must not truncate.
+	// Second session: reopen and append - must not truncate.
 	log2, err := OpenUnmatchedLog(path)
 	if err != nil {
 		t.Fatalf("OpenUnmatchedLog (2nd): %v", err)

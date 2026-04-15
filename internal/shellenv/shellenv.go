@@ -13,7 +13,7 @@ const (
 	ShellZsh                      // zsh without oh-my-zsh
 	ShellZshOMZ                   // zsh with oh-my-zsh
 	ShellFish                     // fish
-	ShellUnknown                  // banner only — no prompt injection
+	ShellUnknown                  // banner only - no prompt injection
 )
 
 // Detect returns the ShellKind for the given shell path and environment slice.

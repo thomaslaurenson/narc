@@ -66,7 +66,7 @@ func EnsureCACert() error {
 
 	// Rotate the cert if it expires soon.
 	if needsRenewal(certPath) {
-		fmt.Fprintf(os.Stderr, "[narc] CA certificate expires soon — regenerating...\n")
+		fmt.Fprintf(os.Stderr, "[narc] CA certificate expires soon - regenerating...\n")
 		return generateCACert(certPath, keyPath)
 	}
 	return nil

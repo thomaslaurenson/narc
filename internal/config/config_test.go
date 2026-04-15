@@ -83,7 +83,7 @@ func TestLoadFallsBackToDefaultsForZeroValues(t *testing.T) {
 	if err := os.MkdirAll(narcDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	// Partial config — missing output_file and log_file.
+	// Partial config - missing output_file and log_file.
 	if err := os.WriteFile(filepath.Join(narcDir, "narc.json"), []byte(`{}`), 0600); err != nil {
 		t.Fatal(err)
 	}

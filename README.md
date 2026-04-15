@@ -4,7 +4,7 @@
 
 ![Release Version](https://img.shields.io/github/v/release/thomaslaurenson/narc?style=flat) ![Release downloads](https://img.shields.io/github/downloads/thomaslaurenson/narc/total?label=downloads)
 
-![Go Version](https://img.shields.io/github/go-mod/go-version/thomaslaurenson/narc) ![Code Coverage](https://img.shields.io/badge/coverage-74.9%25-blue)
+![Go Version](https://img.shields.io/github/go-mod/go-version/thomaslaurenson/narc) ![Code Coverage](https://img.shields.io/badge/coverage-74.4%25-blue)
 
 The Nectar Access Rules Creator, or `narc`, is a tool to help construct OpenStack Access Rules for Application Credentials.
 
@@ -12,7 +12,7 @@ The Nectar Access Rules Creator, or `narc`, is a tool to help construct OpenStac
 
 - **Application Credentials** (AppCreds) allow software to authenticate to OpenStack without using a password
 - **Access Rules** restrict an AppCred to only the exact API calls it needs
-- Figuring out which access rules are needed is hard — most users fall back to "Unrestricted"
+- Figuring out which access rules are needed is hard - most users fall back to "Unrestricted"
 - `narc` intercepts your OpenStack API traffic, analyses it, and generates a ready-to-use `access_rules.json`
 
 ## Inspiration
@@ -54,7 +54,7 @@ narc run --background
 #   export REQUESTS_CA_BUNDLE=~/.narc/ca.pem
 #   export OS_CACERT=~/.narc/ca.pem
 
-# Run your tools…
+# Run your tools...
 openstack server list
 terraform apply
 
@@ -63,8 +63,7 @@ terraform apply
 
 ### Interactive shell session
 
-`narc shell` launches your default shell with the proxy already configured. Run
-as many commands as you like, then type `exit` or press Ctrl-D:
+`narc shell` launches your default shell with the proxy already configured. Run as many commands as you like, then type `exit` or press Ctrl-D:
 
 ```sh
 thomas@t1000:~$ narc shell
@@ -81,6 +80,8 @@ thomas@t1000:~$ narc shell
 [narc] Shutting down...
 [narc] Done. 6 unique access rule(s) written to /home/thomas/.narc/access_rules.json
 ```
+
+> **Note:** Running `narc shell` inside an existing `narc shell` is not supported and will exit with an error. Use `narc run -- <cmd>` to record a specific command from within an active session if needed.
 
 ## Usage Examples
 
@@ -142,6 +143,22 @@ When `narc run` wraps a subprocess, it injects the following into the child's en
 | `SSL_CERT_FILE` | `~/.narc/ca.pem` |
 | `REQUESTS_CA_BUNDLE` | `~/.narc/ca.pem` |
 | `OS_CACERT` | `~/.narc/ca.pem` |
+
+## Shell Prompt Integration
+
+`narc shell` injects a `(narc)` prefix into your prompt so you always know a recording session is active. Support varies by shell:
+
+| Shell | Support | Method |
+|---|---|---|
+| bash | ✅ Full | `--rcfile` injection after `.bashrc` loads |
+| zsh | ✅ Full | `ZDOTDIR` override |
+| zsh + oh-my-zsh | ✅ Full | `ZDOTDIR` override + persistent `precmd` hook |
+| fish | ✅ Full | `SHELL_PROMPT_PREFIX` (native fish variable) |
+| sh / dash / other | ⚠️ Banner only | No prompt prefix, session banner is the indicator |
+
+**Unsupported prompt frameworks (Starship, Powerlevel10k, oh-my-posh, Spaceship, Prezto):**
+
+These frameworks manage their own prompt rendering and cannot be reliably injected from outside. The `(narc)` prefix will not appear in your prompt if you use them. The session banner at startup is always shown regardless. If you use one of these frameworks, you can add your own indicator using the `NARC_RECORDING` environment variable, which is always set to `1` inside a narc session:
 
 ## CA Certificate
 

@@ -193,7 +193,7 @@ func buildEnv(port int, caCertPath string) []string {
 // that errors and warnings from the subprocess remain visible.
 // Returns the wrapped command's exit code, or 1 on start failure.
 func runSubprocess(args []string, env []string, showOutput bool) int {
-	// args[0] is the user's explicitly provided command—this subprocess launch is intentional.
+	// args[0] is the user's explicitly provided command-this subprocess launch is intentional.
 	cmd := exec.Command(args[0], args[1:]...) //nolint:gosec
 	cmd.Stdin = os.Stdin
 	if showOutput {

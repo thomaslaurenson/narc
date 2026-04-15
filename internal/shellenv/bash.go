@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-const bashRC = `# narc session rc — sourced instead of ~/.bashrc
+const bashRC = `# narc session rc - sourced instead of ~/.bashrc
 [ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc"
 
 # Prepend (narc) to PS1 on every prompt redraw.

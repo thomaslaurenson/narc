@@ -22,7 +22,7 @@ import (
 
 // maxKeystoneBodyBytes caps the Keystone token response read to protect against
 // an adversarial or misconfigured endpoint returning an unbounded body.
-const maxKeystoneBodyBytes = 1 << 20 // 1 MiB — far larger than any real token response
+const maxKeystoneBodyBytes = 1 << 20 // 1 MiB - far larger than any real token response
 
 // RequestHandler is called for every intercepted request.
 type RequestHandler interface {
@@ -65,7 +65,7 @@ func New(port int, debug bool, cat *catalog.Catalog, handler RequestHandler, unm
 		return nil, fmt.Errorf("load CA cert: %w", err)
 	}
 
-	// goproxy uses cert.Leaf to sign per-site certificates — must be populated.
+	// goproxy uses cert.Leaf to sign per-site certificates - must be populated.
 	if tlsCert.Leaf == nil {
 		tlsCert.Leaf, err = x509.ParseCertificate(tlsCert.Certificate[0])
 		if err != nil {
@@ -107,7 +107,7 @@ func (p *Proxy) Start() error {
 		// Warn about requests that arrive before the catalog is populated,
 		// excluding the Keystone auth request itself.
 		if p.cat != nil && !p.cat.IsReady() && !isKeystoneAuthPath(req.URL.Path) {
-			fmt.Fprintf(os.Stderr, "[narc:warn] Request received before catalog loaded — recording to unmatched_requests.log\n")
+			fmt.Fprintf(os.Stderr, "[narc:warn] Request received before catalog loaded - recording to unmatched_requests.log\n")
 			if p.unmatchedLog != nil {
 				_ = p.unmatchedLog.Write(req.URL.String())
 			}

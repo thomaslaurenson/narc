@@ -79,7 +79,7 @@ func runShell(_ *cobra.Command, _ []string) error {
 	kind := shellenv.Detect(shellPath, os.Environ())
 
 	if kind == shellenv.ShellUnknown {
-		fmt.Fprintf(os.Stderr, "[narc] Unrecognised shell — prompt integration disabled. The session banner is your only recording indicator.\n")
+		fmt.Fprintf(os.Stderr, "[narc] Unrecognised shell - prompt integration disabled. The session banner is your only recording indicator.\n")
 	}
 
 	promptEnv, shellArgs, cleanup, err := shellenv.BuildPromptEnv(kind, proxyEnv)
@@ -92,7 +92,7 @@ func runShell(_ *cobra.Command, _ []string) error {
 	}
 	defer cleanup()
 
-	// shellPath comes from $SHELL — the subprocess launch is intentional.
+	// shellPath comes from $SHELL - the subprocess launch is intentional.
 	sh := exec.Command(shellPath, shellArgs...) //nolint:gosec
 	sh.Env = append(promptEnv, "NARC_RECORDING=1")
 

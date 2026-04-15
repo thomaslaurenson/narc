@@ -21,5 +21,5 @@ on Windows. Use 'narc run -- <command>' to record a specific command instead.`,
 }
 
 func init() {
-	// No flags registered on Windows — the command always returns an error.
+	// No flags registered on Windows - the command always returns an error.
 }
