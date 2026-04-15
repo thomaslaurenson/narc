@@ -9,12 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/creack/pty"
 	"github.com/spf13/cobra"
+	"github.com/thomaslaurenson/narc/internal/shellenv"
 	"golang.org/x/term"
 )
 
@@ -43,6 +43,10 @@ const sessionBanner = "" +
 	"╚════════════════════════════════════════╝\r\n"
 
 func runShell(_ *cobra.Command, _ []string) error {
+	if os.Getenv("NARC_RECORDING") == "1" {
+		return fmt.Errorf("already inside a narc recording session; nested narc shell is not supported")
+	}
+
 	if shellLogFileFlag != "" {
 		cfg.LogFile = shellLogFileFlag
 	}
@@ -70,12 +74,26 @@ func runShell(_ *cobra.Command, _ []string) error {
 		shellPath = "/bin/sh"
 	}
 
-	env := shellFilterEnv(buildEnv(p.Port, certPath))
-	env = append(env, "NARC_RECORDING=1")
+	proxyEnv := buildEnv(p.Port, certPath)
+	kind := shellenv.Detect(shellPath, os.Environ())
+
+	if kind == shellenv.ShellUnknown {
+		fmt.Fprintf(os.Stderr, "[narc] Unrecognised shell — prompt integration disabled. The session banner is your only recording indicator.\n")
+	}
+
+	promptEnv, shellArgs, cleanup, err := shellenv.BuildPromptEnv(kind, proxyEnv)
+	if err != nil {
+		p.Stop()
+		if unmatchedLog != nil {
+			_ = unmatchedLog.Close()
+		}
+		return fmt.Errorf("build prompt env: %w", err)
+	}
+	defer cleanup()
 
 	// shellPath comes from $SHELL — the subprocess launch is intentional.
-	sh := exec.Command(shellPath) //nolint:gosec
-	sh.Env = env
+	sh := exec.Command(shellPath, shellArgs...) //nolint:gosec
+	sh.Env = append(promptEnv, "NARC_RECORDING=1")
 
 	// Start the shell attached to a pseudo-terminal so readline, tab-completion,
 	// and prompt colours all work correctly without shell-specific wiring.
@@ -160,39 +178,6 @@ func runShell(_ *cobra.Command, _ []string) error {
 		return &ExitCodeError{Code: exitErr.ExitCode()}
 	}
 	return nil
-}
-
-// shellFilterEnv removes VS Code shell-integration variables from env and
-// injects a best-effort narc prompt. VS Code injects PROMPT_COMMAND and
-// VSCODE_* vars that reference shell functions sourced only in the outer
-// terminal; they cause 'command not found' errors in the new pty shell.
-// PS1/PROMPT are set as a hint for bare bash/zsh; users with starship,
-// oh-my-zsh, etc. will see their own prompt (their rc overrides these), which
-// is acceptable — the session banner already makes the state clear.
-func shellFilterEnv(env []string) []string {
-	out := make([]string, 0, len(env)+2)
-	for _, kv := range env {
-		key, _, _ := strings.Cut(kv, "=")
-		if key == "PROMPT_COMMAND" || strings.HasPrefix(key, "VSCODE_") {
-			continue
-		}
-		out = append(out, kv)
-	}
-	out = append(out,
-		// best-effort for bare bash/zsh with no rc file or a rc that doesn't
-		// set a prompt (picked up before .bashrc/.zshrc runs).
-		`PS1=(narc) \u@\h:\w\$ `,
-		`PROMPT=(narc) %n@%m:%~%# `,
-		// PROMPT_COMMAND is intentionally filtered out above and then re-added here
-		// with a narc-specific value. Any PROMPT_COMMAND inherited from the outer
-		// shell (e.g. VS Code shell integration) is removed first to prevent
-		// 'command not found' errors for shell functions that exist only in the outer
-		// terminal. The new value prepends "(narc) " to whatever PS1 the shell's rc
-		// file sets, then unsets itself so it only fires once.
-		// This is a no-op for zsh and fish, which ignore PROMPT_COMMAND entirely.
-		`PROMPT_COMMAND=PS1="(narc) $PS1"; unset PROMPT_COMMAND`,
-	)
-	return out
 }
 
 func init() {
