@@ -1,8 +1,13 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# GoReleaser v2 schema
 version: 2
+
+dist: dist
 
 builds:
   - env:
       - CGO_ENABLED=0
+    mod_timestamp: "{{ .CommitTimestamp }}"
     goos:
       - linux
       - darwin
@@ -28,15 +33,10 @@ checksum:
   algorithm: sha256
 
 changelog:
-  sort: asc
+  sort: desc
   filters:
     exclude:
       - "^docs:"
       - "^test:"
       - "^chore:"
       - "^Merge "
-
-release:
-  github:
-    owner: thomaslaurenson
-    name: narc
