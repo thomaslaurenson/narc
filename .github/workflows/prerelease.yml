@@ -51,9 +51,16 @@ jobs:
           git tag -f ${{ steps.dev_tag.outputs.dev_tag }}
           git push origin ${{ steps.dev_tag.outputs.dev_tag }} --force
 
+      - name: Generate dev release notes
+        run: echo "Built from commit ${{ github.sha }}" > /tmp/dev-release-notes.md
+
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
-          args: release --clean --config .goreleaser.prerelease.yml
+          args: >
+            release
+            --clean
+            --config .goreleaser.prerelease.yml
+            --release-notes /tmp/dev-release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
