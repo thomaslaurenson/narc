@@ -20,7 +20,10 @@ jobs:
           cache: true
 
       - name: Build snapshot binaries
-        run: make snapshot
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          args: release --snapshot --clean
 
       - name: Delete existing dev release
         run: gh release delete dev --yes --cleanup-tag || true
