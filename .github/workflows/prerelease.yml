@@ -23,7 +23,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          args: release --snapshot --clean
+          args: release --snapshot --clean --skip=sign
 
       - name: Delete existing dev release
         run: gh release delete dev --yes --cleanup-tag || true
