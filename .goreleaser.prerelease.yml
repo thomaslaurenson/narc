@@ -46,5 +46,6 @@ release:
 changelog:
   disable: true
 
-snapshot:
-  version_template: "dev-{{ .ShortCommit }}"
+git:
+  ignore_tags:
+    - "*-dev"

@@ -21,26 +21,34 @@ jobs:
 
       - uses: sigstore/cosign-installer@v4.1.2
 
-      - name: Set dev tag
+      - name: Compute dev tag
+        id: dev_tag
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -f dev
-          git push origin dev --force
+          LATEST=$(git tag --list 'v*.*.*' | grep -Ev -- '-' | sort -V | tail -1)
+          if [ -z "$LATEST" ]; then
+            echo "Error: no release tag found" >&2
+            exit 1
+          fi
+          PATCH=$(echo "$LATEST" | cut -d. -f3)
+          DEV_TAG="$(echo "$LATEST" | cut -d. -f1-2).$((PATCH + 1))-dev"
+          echo "dev_tag=${DEV_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Computed dev tag: ${DEV_TAG} (from latest release: ${LATEST})"
 
-      - name: Delete existing dev release (using gh)
+      - name: Delete any existing dev release
         run: |
-          gh release delete dev --yes \
-          --cleanup-tag 2>/dev/null \
-          || echo "No existing dev release to delete"
+          gh release list --json tagName --jq '.[].tagName' \
+            | grep -E -- '-dev$' \
+            | xargs -r -I{} gh release delete {} --yes --cleanup-tag \
+            || echo "No existing dev release to delete"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-
-      - name: Recreate dev tag (cleanup-tag removed it)
+      - name: Tag and push dev tag
         run: |
-          git tag -f dev
-          git push origin dev --force
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f ${{ steps.dev_tag.outputs.dev_tag }}
+          git push origin ${{ steps.dev_tag.outputs.dev_tag }} --force
 
       - uses: goreleaser/goreleaser-action@v7
         with:
