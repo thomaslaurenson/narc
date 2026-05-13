@@ -1,3 +1,5 @@
+// Package shellenv detects the user's shell and builds the prompt integration
+// environment for bash, zsh, oh-my-zsh, and fish.
 package shellenv
 
 import (

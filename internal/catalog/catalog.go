@@ -1,3 +1,5 @@
+// Package catalog maintains the OpenStack service endpoint map parsed from
+// Keystone token responses and provides URL prefix lookups.
 package catalog
 
 import (
@@ -9,16 +11,20 @@ import (
 	"sync"
 )
 
+// Entry is a single OpenStack service endpoint from the Keystone service catalog.
 type Entry struct {
 	ServiceType string
 	BaseURL     string
 }
 
+// Catalog holds the set of OpenStack service endpoints parsed from a Keystone
+// token response. Safe for concurrent use.
 type Catalog struct {
 	mu      sync.RWMutex
 	entries []Entry
 }
 
+// NewCatalog returns an empty Catalog ready for use.
 func NewCatalog() *Catalog {
 	return &Catalog{}
 }

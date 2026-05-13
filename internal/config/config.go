@@ -1,3 +1,4 @@
+// Package config loads and persists narc's runtime configuration from ~/.narc/narc.json.
 package config
 
 import (
@@ -16,6 +17,7 @@ const (
 	narcDirName       = ".narc"
 )
 
+// Config holds the resolved settings for a narc session.
 type Config struct {
 	ProxyPort  int    `json:"proxy_port"`
 	OutputFile string `json:"output_file"`
@@ -48,6 +50,8 @@ func NarcDir() (string, error) {
 	return dir, nil
 }
 
+// Load reads the narc configuration file from ~/.narc/narc.json.
+// Returns ErrNotFound if the file does not exist.
 func Load() (*Config, error) {
 	dir, err := NarcDirPath()
 	if err != nil {
@@ -96,6 +100,8 @@ func Load() (*Config, error) {
 	return c, nil
 }
 
+// Save writes the configuration to ~/.narc/narc.json, creating the directory
+// if it does not exist.
 func (c *Config) Save() error {
 	dir, err := NarcDir()
 	if err != nil {

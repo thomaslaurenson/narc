@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.5.2 - 2026-05-13
+
+### Fixed
+
+- Goreleaser now makes binary releases
+- Docstring everywhere!
+
 ## v0.5.1 - 2026-04-15
 
 ### Added

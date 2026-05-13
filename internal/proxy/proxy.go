@@ -1,3 +1,5 @@
+// Package proxy implements the MITM HTTP/HTTPS proxy that intercepts OpenStack
+// API traffic and notifies a RequestHandler for each request.
 package proxy
 
 import (
@@ -29,6 +31,8 @@ type RequestHandler interface {
 	HandleRequest(method, url string)
 }
 
+// Proxy is an HTTP/HTTPS man-in-the-middle proxy that intercepts OpenStack API
+// traffic and notifies a RequestHandler for each request.
 type Proxy struct {
 	Port         int
 	Debug        bool
