@@ -3,6 +3,7 @@ SHELL := /bin/bash
 BINARY  := narc
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -s -w -X github.com/thomaslaurenson/narc/cmd.Version=$(VERSION)
+TAG     ?= $(shell git describe --tags --abbrev=0 2>/dev/null)
 
 # HELP
 
@@ -28,6 +29,21 @@ snapshot: ## Build a local multi-platform snapshot via GoReleaser
 .PHONY: release_check
 release_check: ## Validate .goreleaser.yml without publishing
 	goreleaser check
+
+.PHONY: get_changelog
+get_changelog: ## Print release notes for TAG to stdout (default: latest tag; override with TAG=v1.0.0)
+	@if [ -z "$(TAG)" ]; then \
+		echo "Error: no tag resolved. Create a git tag or pass TAG=v1.0.0" >&2; \
+		exit 1; \
+	fi
+	@notes=$$(awk -v tag="$(TAG)" \
+		'/^## /{if(found)exit; if(index($$0,"## "tag" ")==1)found=1; next} found{print}' \
+		CHANGELOG.md); \
+	if [ -z "$$notes" ]; then \
+		echo "Error: no CHANGELOG entry found for $(TAG)" >&2; \
+		exit 1; \
+	fi; \
+	echo "$$notes"
 
 .PHONY: clean
 clean: ## Remove build artifacts

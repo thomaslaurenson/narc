@@ -19,33 +19,32 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build snapshot binaries
-        uses: goreleaser/goreleaser-action@v7
+      - uses: sigstore/cosign-installer@v4
+
+      - name: Set dev tag
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f dev
+          git push origin dev --force
+
+      - name: Delete existing dev release (using gh)
+        run: |
+          gh release delete dev --yes \
+          --cleanup-tag 2>/dev/null \
+          || echo "No existing dev release to delete"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+      - name: Recreate dev tag (cleanup-tag removed it)
+        run: |
+          git tag -f dev
+          git push origin dev --force
+
+      - uses: goreleaser/goreleaser-action@v7
         with:
-          distribution: goreleaser
-          args: release --snapshot --clean --skip=sign
-
-      - name: Delete existing dev release
-        run: gh release delete dev --yes --cleanup-tag || true
+          version: "~> v2"
+          args: release --clean --config .goreleaser.prerelease.yml
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create prerelease
-        run: |
-          gh release create dev \
-            --title "Dev (Pre-release)" \
-            --prerelease \
-            --notes "**Commit:** ${{ github.sha }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload release assets
-        run: |
-          for dir in bin/narc_*/; do
-            name=$(basename "$dir")
-            file=$(find "$dir" -maxdepth 1 -type f | head -1)
-            gh release upload dev "$file#$name"
-          done
-          gh release upload dev bin/checksums.txt
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

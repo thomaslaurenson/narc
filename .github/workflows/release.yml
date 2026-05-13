@@ -20,20 +20,16 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - uses: sigstore/cosign-installer@v4
+
       - name: Extract release notes from CHANGELOG.md
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          awk "/^## ${TAG} /{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md \
-            > /tmp/release-notes.md
-          if [ ! -s /tmp/release-notes.md ]; then
-            echo "No CHANGELOG entry found for ${TAG}" >&2
-            exit 1
-          fi
+        run: make get_changelog TAG=${GITHUB_REF_NAME} > /tmp/release-notes.md
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
+          version: "~> v2"
           args: release --clean --release-notes /tmp/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
