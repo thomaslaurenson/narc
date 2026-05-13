@@ -67,3 +67,4 @@ jobs:
             --release-notes /tmp/dev-release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ steps.dev_tag.outputs.dev_tag }}
