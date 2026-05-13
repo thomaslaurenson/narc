@@ -1,0 +1,38 @@
+---
+name: Prerelease
+
+on: workflow_call
+
+permissions:
+  contents: write
+
+jobs:
+  prerelease:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build snapshot binaries
+        run: make snapshot
+
+      - name: Delete existing dev release
+        run: gh release delete dev --yes --cleanup-tag || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create prerelease
+        run: |
+          gh release create dev \
+            --title "Dev (Pre-release)" \
+            --prerelease \
+            --notes "**Commit:** ${{ github.sha }}" \
+            $(find bin -maxdepth 2 -type f ! -name "*.yaml" ! -name "*.json")
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,11 +1,9 @@
-name: PR
+name: Main
 
 on:
-  pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
+  push:
+    branches:
+      - "main"
     paths:
       - ".github/workflows/**"
       - "cmd/**"
@@ -15,12 +13,12 @@ on:
       - "go.sum"
       - "Makefile"
 
-permissions:
-  contents: read
-
 concurrency:
-  group: pr-${{ github.event.pull_request.number }}
+  group: prerelease
   cancel-in-progress: true
+
+permissions:
+  contents: write
 
 jobs:
 
@@ -29,3 +27,8 @@ jobs:
 
   test:
     uses: ./.github/workflows/test.yml
+
+  prerelease:
+    needs: [lint, test]
+    uses: ./.github/workflows/prerelease.yml
+    secrets: inherit

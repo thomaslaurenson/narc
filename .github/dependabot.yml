@@ -14,6 +14,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    labels:
+      - "dependencies"
+    groups:
+      dev-dependencies:
+        dependency-type: "development"
     open-pull-requests-limit: 0  # only security updates
     assignees:
       - "thomaslaurenson"
