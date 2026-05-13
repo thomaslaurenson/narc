@@ -37,10 +37,13 @@ jobs:
 
       - name: Delete any existing dev release
         run: |
-          gh release list --json tagName --jq '.[].tagName' \
-            | grep -E -- '-dev$' \
-            | xargs -r -I{} gh release delete {} --yes --cleanup-tag \
-            || echo "No existing dev release to delete"
+          DEV_TAG="${{ steps.dev_tag.outputs.dev_tag }}"
+          if gh release view "${DEV_TAG}" > /dev/null 2>&1; then
+            gh release delete "${DEV_TAG}" --yes --cleanup-tag
+            echo "Deleted existing dev release: ${DEV_TAG}"
+          else
+            echo "No existing dev release for ${DEV_TAG}"
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

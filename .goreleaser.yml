@@ -44,3 +44,7 @@ release:
 
 changelog:
   disable: true
+
+git:
+  ignore_tags:
+    - "*-dev"
