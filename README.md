@@ -1,10 +1,10 @@
 # narc
 
-![Build Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/narc/tag.yml?style=flat) ![Test Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/narc/tag.yml?style=flat&label=test)
+![Build Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/narc/tag.yml?style=flat&logo=github) ![Test Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/narc/tag.yml?style=flat&label=test&logo=github)
 
-![Release Version](https://img.shields.io/github/v/release/thomaslaurenson/narc?style=flat) ![Release downloads](https://img.shields.io/github/downloads/thomaslaurenson/narc/total?label=downloads)
+![Release Version](https://img.shields.io/github/v/release/thomaslaurenson/narc?style=flat&logo=github) ![Release downloads](https://img.shields.io/github/downloads/thomaslaurenson/narc/total?label=downloads&logo=github)
 
-![Go Version](https://img.shields.io/github/go-mod/go-version/thomaslaurenson/narc) ![Code Coverage](https://img.shields.io/badge/coverage-74.7%25-blue)
+![Go Version](https://img.shields.io/github/go-mod/go-version/thomaslaurenson/narc?logo=go) ![Code Coverage](https://img.shields.io/badge/Coverage-74.7%25-blue?logo=go)
 
 The Nectar Access Rules Creator, or `narc`, is a tool to help construct OpenStack Access Rules for Application Credentials.
 
