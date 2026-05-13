@@ -1,8 +1,7 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
-# GoReleaser v2 schema
 version: 2
 
-dist: dist
+dist: bin
 
 builds:
   - env:
@@ -22,21 +21,18 @@ builds:
       - -s -w -X github.com/thomaslaurenson/narc/cmd.Version={{.Version}}
 
 archives:
-  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
+  - formats: [binary]
 
 checksum:
-  name_template: "checksums.txt"
+  name_template: checksums.txt
   algorithm: sha256
 
-changelog:
-  sort: desc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-      - "^Merge "
+signs:
+  - artifacts: checksum
+    cmd: cosign
+    args:
+      - sign-blob
+      - --yes
+      - --output-signature=${signature}
+      - ${artifact}
+    signature: ${artifact}.sig
