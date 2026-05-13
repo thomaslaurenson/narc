@@ -1,3 +1,5 @@
+// Package output provides the UnmatchedLog writer for recording HTTP requests
+// that do not match any catalog entry.
 package output
 
 import (

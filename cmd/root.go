@@ -1,3 +1,4 @@
+// Package cmd implements the narc command-line interface.
 package cmd
 
 import (
@@ -43,6 +44,7 @@ file suitable for use with OpenStack Application Credential access rules.`,
 	},
 }
 
+// Execute runs the root cobra command and returns any error.
 func Execute() error {
 	return rootCmd.Execute()
 }

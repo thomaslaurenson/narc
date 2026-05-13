@@ -1,3 +1,5 @@
+// Package certmgr manages the narc CA certificate and key used to intercept
+// TLS traffic. It generates, stores, and rotates the CA as needed.
 package certmgr
 
 import (
@@ -25,6 +27,7 @@ const (
 	certRenewBefore = 30 * 24 * time.Hour
 )
 
+// CACertPath returns the path to the narc CA certificate file.
 func CACertPath() (string, error) {
 	dir, err := config.NarcDirPath()
 	if err != nil {
@@ -41,6 +44,8 @@ func caKeyPath() (string, error) {
 	return filepath.Join(dir, caKeyFilename), nil
 }
 
+// EnsureCACert creates or rotates the CA certificate and key if they are
+// absent or nearing expiry.
 func EnsureCACert() error {
 	// Ensure the directory exists before we attempt any writes.
 	if _, err := config.NarcDir(); err != nil {
@@ -90,6 +95,8 @@ func needsRenewal(path string) bool {
 	return cert.NotAfter.Before(time.Now().Add(certRenewBefore))
 }
 
+// LoadTLSCert loads the CA certificate and key pair from disk and returns it
+// as a tls.Certificate ready for use with goproxy.
 func LoadTLSCert() (tls.Certificate, error) {
 	certPath, err := CACertPath()
 	if err != nil {

@@ -1,3 +1,5 @@
+// Package analyzer classifies intercepted HTTP requests against a service catalog,
+// normalises their paths, deduplicates, and accumulates OpenStack access rules.
 package analyzer
 
 import (
