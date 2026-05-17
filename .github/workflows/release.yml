@@ -37,3 +37,10 @@ jobs:
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
 
       - uses: thomaslaurenson/gpipe-action@v1
+
+      - name: Upload install scripts to release
+        shell: bash
+        run: |
+          gh release upload "${{ github.ref_name }}" install.sh install.ps1 checksums.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
