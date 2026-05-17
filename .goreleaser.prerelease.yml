@@ -22,7 +22,7 @@ builds:
 
 archives:
   - formats: [binary]
-    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ if eq .Arch \"amd64\" }}x86_64{{ else if eq .Arch \"arm64\" }}aarch64{{ else }}{{ .Arch }}{{ end }}"
 
 checksum:
   name_template: checksums.txt
