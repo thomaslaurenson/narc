@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.3 - 2026-05-17
+
+### Added
+
+- gpipe installer scripts
+
 ## v0.5.2 - 2026-05-13
 
 ### Fixed
