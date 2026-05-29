@@ -7,6 +7,9 @@ builds:
   - env:
       - CGO_ENABLED=0
     mod_timestamp: "{{ .CommitTimestamp }}"
+    binary: >-
+      narc-{{ .Os }}-{{ if eq .Arch "amd64" }}x86_64{{ else if eq .Arch "arm64" }}aarch64{{ else }}{{ .Arch }}{{ end }}
+    no_unique_dist_dir: true
     goos:
       - linux
       - darwin
@@ -20,32 +23,10 @@ builds:
     ldflags:
       - -s -w -X github.com/thomaslaurenson/narc/cmd.Version={{.Version}}
 
-archives:
-  - formats: [binary]
-    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ if eq .Arch \"amd64\" }}x86_64{{ else if eq .Arch \"arm64\" }}aarch64{{ else }}{{ .Arch }}{{ end }}"
-
-checksum:
-  name_template: checksums.txt
-  algorithm: sha256
-
-signs:
-  - artifacts: checksum
-    cmd: cosign
-    signature: ${artifact}.sig
-    args:
-      - sign-blob
-      - "--bundle=${signature}"
-      - "${artifact}"
-      - "--yes"
-
-release:
-  prerelease: true
-  draft: false
-  name_template: "Dev (Pre-release)"
-
-changelog:
-  disable: true
+snapshot:
+  version_template: "{{ incpatch .Version }}-dev"
 
 git:
   ignore_tags:
     - "*-dev"
+    - "dev"

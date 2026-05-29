@@ -1,46 +1,49 @@
 name: Release
 
-on: workflow_call
+on:
+  workflow_call
 
 permissions:
   contents: write
   id-token: write
 
 jobs:
-  goreleaser:
+  release:
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out repository code
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
 
-      - uses: sigstore/cosign-installer@v4.1.2
-
       - name: Extract release notes from CHANGELOG.md
         run: make get_changelog TAG=${GITHUB_REF_NAME} > /tmp/release-notes.md
 
-      - name: Run GoReleaser
+      - name: Build binaries
         uses: goreleaser/goreleaser-action@v7
         with:
-          distribution: goreleaser
           version: "~> v2"
-          args: release --clean --release-notes /tmp/release-notes.md
+          args: build --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
 
       - uses: thomaslaurenson/gpipe-action@v1
+        with:
+          cosign_sign: true
 
-      - name: Upload install scripts to release
-        shell: bash
+      - name: Create GitHub release
         run: |
-          gh release upload "${{ github.ref_name }}" install.sh install.ps1 checksums.txt
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --notes-file /tmp/release-notes.md \
+            dist/narc-* \
+            install.sh \
+            install.ps1 \
+            checksums.txt \
+            checksums.txt.sigstore.json
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
