@@ -8,12 +8,12 @@ on:
       - reopened
     paths:
       - ".github/workflows/**"
-      - "cmd/**"
-      - "internal/**"
-      - "main.go"
-      - "go.mod"
-      - "go.sum"
-      - "Makefile"
+      - "**.go"
+      - go.mod
+      - go.sum
+      - .goreleaser*.yml
+      - .gpipe.yml
+      - Makefile
 
 permissions:
   contents: read

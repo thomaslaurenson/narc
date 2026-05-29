@@ -1,10 +1,10 @@
 # Changelog
 
-## v0.5.3 - 2026-05-17
+## v0.5.3 - 2026-05-29
 
 ### Added
 
-- gpipe installer scripts
+- gpipe installer workflow
 
 ## v0.5.2 - 2026-05-13
 

@@ -1,11 +1,10 @@
----
 name: Prerelease
 
-on: workflow_call
+on:
+  workflow_call
 
 permissions:
   contents: write
-  id-token: write
 
 jobs:
   prerelease:
@@ -14,35 +13,17 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
 
-      - uses: sigstore/cosign-installer@v4.1.2
-
-      - name: Compute dev tag
-        id: dev_tag
-        run: |
-          LATEST=$(git tag --list 'v*.*.*' | grep -Ev -- '-' | sort -V | tail -1)
-          if [ -z "$LATEST" ]; then
-            echo "Error: no release tag found" >&2
-            exit 1
-          fi
-          PATCH=$(echo "$LATEST" | cut -d. -f3)
-          DEV_TAG="$(echo "$LATEST" | cut -d. -f1-2).$((PATCH + 1))-dev"
-          echo "dev_tag=${DEV_TAG}" >> "$GITHUB_OUTPUT"
-          echo "Computed dev tag: ${DEV_TAG} (from latest release: ${LATEST})"
-
       - name: Delete any existing dev release
         run: |
-          DEV_TAG="${{ steps.dev_tag.outputs.dev_tag }}"
-          if gh release view "${DEV_TAG}" > /dev/null 2>&1; then
-            gh release delete "${DEV_TAG}" --yes --cleanup-tag
-            echo "Deleted existing dev release: ${DEV_TAG}"
-          else
-            echo "No existing dev release for ${DEV_TAG}"
+          if gh release view "dev" > /dev/null 2>&1; then
+            gh release delete "dev" --yes --cleanup-tag
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -51,20 +32,21 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -f ${{ steps.dev_tag.outputs.dev_tag }}
-          git push origin ${{ steps.dev_tag.outputs.dev_tag }} --force
+          git tag -f dev
+          git push origin dev --force
 
-      - name: Generate dev release notes
-        run: echo "Built from commit ${{ github.sha }}" > /tmp/dev-release-notes.md
-
-      - uses: goreleaser/goreleaser-action@v7
+      - name: Build binaries
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
-          args: >
-            release
-            --clean
-            --config .goreleaser.prerelease.yml
-            --release-notes /tmp/dev-release-notes.md
+          args: build --snapshot --clean --config .goreleaser.prerelease.yml
+
+      - name: Create dev release
+        run: |
+          gh release create "dev" \
+            --title "Dev (Pre-release)" \
+            --notes "Built from commit [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})" \
+            --prerelease \
+            dist/narc-*
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_CURRENT_TAG: ${{ steps.dev_tag.outputs.dev_tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
