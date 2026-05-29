@@ -1,19 +1,19 @@
 # Changelog
 
-## v0.5.3 - 2026-05-29
+## 0.5.3 - 2026-05-29
 
 ### Added
 
 - gpipe installer workflow
 
-## v0.5.2 - 2026-05-13
+## 0.5.2 - 2026-05-13
 
 ### Fixed
 
 - Goreleaser now makes binary releases
 - Docstring everywhere!
 
-## v0.5.1 - 2026-04-15
+## 0.5.1 - 2026-04-15
 
 ### Added
 
@@ -26,7 +26,7 @@
 - Starting `narc shell` inside an existing `narc shell` session now exits
 - Terminal state is now restored exactly once on exit
 
-## v0.5.0 - 2026-04-07
+## 0.5.0 - 2026-04-07
 
 ### Added
 
@@ -49,7 +49,7 @@
 - Tests now run in parallel for faster CI
 - Fixed the certmgr idempotency test to call the real function rather than duplicating logic
 
-## v0.4.0 - 2026-03-30
+## 0.4.0 - 2026-03-30
 
 ### Changed
 
@@ -59,13 +59,13 @@
 - Switched CA certificate generation from RSA-4096 to ECDSA P-256
 - Tightened file permissions on `access_rules.json` to `0600`
 
-## v0.3.0 - 2026-03-25
+## 0.3.0 - 2026-03-25
 
 ### Changed
 
 - Complete rewrite in golang
 
-## v0.2.0 - 2026-03-02
+## 0.2.0 - 2026-03-02
 
 ### Added
 
@@ -73,7 +73,7 @@
 - Added `uv` for dependency management
 - Switched linting to `ruff`
 
-## v0.1.0 - 2024-01-01
+## 0.1.0 - 2024-01-01
 
 ### Added
 
