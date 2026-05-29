@@ -1,8 +1,18 @@
 binary: narc
 
 platforms:
-  linux_amd64:  ./dist/narc-linux-x86_64
-  linux_arm64:  ./dist/narc-linux-aarch64
-  darwin_amd64: ./dist/narc-darwin-x86_64
-  darwin_arm64: ./dist/narc-darwin-aarch64
-  windows_amd64: ./dist/narc-windows-x86_64.exe
+  linux_amd64:
+    path: ./dist/narc-linux-x86_64
+    name: narc-linux-x86_64
+  linux_arm64:
+    path: ./dist/narc-linux-aarch64
+    name: narc-linux-aarch64
+  darwin_amd64:
+    path: ./dist/narc-darwin-x86_64
+    name: narc-darwin-x86_64
+  darwin_arm64:
+    path: ./dist/narc-darwin-aarch64
+    name: narc-darwin-aarch64
+  windows_amd64:
+    path: ./dist/narc-windows-x86_64.exe
+    name: narc-windows-x86_64.exe

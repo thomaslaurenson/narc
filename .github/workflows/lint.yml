@@ -1,7 +1,7 @@
----
 name: Lint
 
-on: workflow_call
+on:
+  workflow_call
 
 permissions:
   contents: read
@@ -10,20 +10,13 @@ jobs:
   go_lint:
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out repository code
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Check formatting
-        run: make fmt_check
-
-      - name: Check go mod tidy
-        run: make mod_check
-
-      - name: Run go vet
-        run: make vet
+      - run: make fmt_check
+      - run: make mod_check
+      - run: make vet
