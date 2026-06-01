@@ -73,7 +73,7 @@ func runRun(_ *cobra.Command, args []string) error {
 		}
 	}
 
-	p, az, certPath, unmatchedLog, err := startRecording(cfg.LogFile, onUnmatched)
+	p, az, certPath, unmatchedLog, err := startRecording(cfg.LogFile, onUnmatched, nil)
 	if err != nil {
 		return err
 	}
@@ -101,7 +101,11 @@ func runRun(_ *cobra.Command, args []string) error {
 // and returns them ready for use. Shared between the run and shell commands.
 // logFile is opened for unmatched-URL logging (nil if empty). onUnmatched is
 // the debug callback; nil disables it. Both decisions belong to the caller.
-func startRecording(logFile string, onUnmatched func(string, string)) (*proxy.Proxy, *analyzer.Analyzer, string, *output.UnmatchedLog, error) {
+// logf is used for all narc status output; nil defaults to fmt.Fprintf(os.Stderr, ...).
+func startRecording(logFile string, onUnmatched func(string, string), logf func(string, ...any)) (*proxy.Proxy, *analyzer.Analyzer, string, *output.UnmatchedLog, error) {
+	if logf == nil {
+		logf = func(format string, args ...any) { fmt.Fprintf(os.Stderr, format, args...) }
+	}
 	var unmatchedLog *output.UnmatchedLog
 	if logFile != "" {
 		var err error
@@ -113,10 +117,10 @@ func startRecording(logFile string, onUnmatched func(string, string)) (*proxy.Pr
 
 	cat := catalog.NewCatalog()
 	az := analyzer.New(cat, unmatchedLog, func(rule analyzer.AccessRule) {
-		fmt.Fprintf(os.Stderr, "[narc] %-20s %-8s %s\n", rule.Service, rule.Method, rule.Path)
+		logf("[narc] %-20s %-8s %s\n", rule.Service, rule.Method, rule.Path)
 	}, onUnmatched)
 
-	p, err := proxy.New(cfg.ProxyPort, debugFlag, cat, az, unmatchedLog)
+	p, err := proxy.New(cfg.ProxyPort, debugFlag, cat, az, unmatchedLog, logf)
 	if err != nil {
 		if unmatchedLog != nil {
 			_ = unmatchedLog.Close()
@@ -139,7 +143,7 @@ func startRecording(logFile string, onUnmatched func(string, string)) (*proxy.Pr
 		return nil, nil, "", nil, fmt.Errorf("start proxy: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "[narc] Proxy listening on http://127.0.0.1:%d\n", p.Port)
+	logf("[narc] Proxy listening on http://127.0.0.1:%d\n", p.Port)
 	return p, az, certPath, unmatchedLog, nil
 }
 

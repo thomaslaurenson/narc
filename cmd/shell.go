@@ -58,14 +58,25 @@ func runShell(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
+	// rawLogf writes to stderr with \r\n so lines are correctly rendered while
+	// the outer terminal is in raw mode (used for the entire shell session).
+	rawLogf := func(format string, args ...any) {
+		// Replace any trailing \n with \r\n so the cursor returns to column 0.
+		s := fmt.Sprintf(format, args...)
+		if len(s) > 0 && s[len(s)-1] == '\n' {
+			s = s[:len(s)-1] + "\r\n"
+		}
+		fmt.Fprint(os.Stderr, s)
+	}
+
 	var onUnmatched func(string, string)
 	if debugFlag {
 		onUnmatched = func(method, url string) {
-			fmt.Fprintf(os.Stderr, "[narc:debug] unmatched: %s %s\n", method, url)
+			rawLogf("[narc:debug] unmatched: %s %s\n", method, url)
 		}
 	}
 
-	p, az, certPath, unmatchedLog, err := startRecording(cfg.LogFile, onUnmatched)
+	p, az, certPath, unmatchedLog, err := startRecording(cfg.LogFile, onUnmatched, rawLogf)
 	if err != nil {
 		return err
 	}

@@ -34,7 +34,7 @@ func TestProxyNewNilCatalogAndHandler(t *testing.T) {
 	ResetForTesting()
 	t.Setenv("HOME", t.TempDir())
 
-	p, err := New(0, false, nil, nil, nil)
+	p, err := New(0, false, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -47,12 +47,12 @@ func TestProxyNewDoubleInstantiation(t *testing.T) {
 	ResetForTesting()
 	t.Setenv("HOME", t.TempDir())
 
-	_, err := New(0, false, nil, nil, nil)
+	_, err := New(0, false, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("first New: %v", err)
 	}
 
-	_, err = New(0, false, nil, nil, nil)
+	_, err = New(0, false, nil, nil, nil, nil)
 	if err == nil {
 		t.Fatal("second New: expected an error, got nil")
 	}
@@ -80,7 +80,7 @@ func TestProxyIntegration(t *testing.T) {
 	cat := catalog.NewCatalog()
 	handler := &mockHandler{}
 
-	p, err := New(0, false, cat, handler, nil)
+	p, err := New(0, false, cat, handler, nil, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
