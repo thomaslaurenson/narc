@@ -21,7 +21,19 @@ The Nectar Access Rules Creator, or `narc`, is a tool to help construct OpenStac
 
 ## Installation
 
-Download a pre-built binary from the [releases page](https://github.com/thomaslaurenson/narc/releases), or install from source:
+Download a pre-built binary from the [releases page](https://github.com/thomaslaurenson/narc/releases). For easier install, use the bash installer script:
+
+```sh
+curl -fsSL https://github.com/thomaslaurenson/narc/releases/latest/download/install.sh | bash
+```
+
+Or the PowerShell installer script if on Windows:
+
+```ps
+irm https://github.com/thomaslaurenson/narc/releases/latest/download/install.ps1 | iex
+```
+
+Install from source:
 
 ```sh
 go install github.com/thomaslaurenson/narc@latest
