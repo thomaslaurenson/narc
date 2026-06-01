@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.4 - 2026-06-02
+
+### Fixed
+
+- Standard output alignment for proxy
+
 ## 0.5.3 - 2026-05-29
 
 ### Added
