@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.5 - 2026-07-17
+
+### Updated
+
+- Package bump
+
 ## 0.5.4 - 2026-06-02
 
 ### Fixed
