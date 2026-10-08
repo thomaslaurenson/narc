@@ -2,6 +2,15 @@
 
 ## 0.5.6 - 2026-08-14
 
+### Added
+
+- Add a --version flag, and accept --port 0 to pick any free port
+
+### Fixed
+
+- Fix a bare narc invocation exiting zero, and go install builds reporting their version as dev
+- Fix narc shell leaving the terminal raw and writing no rules when narc is terminated
+
 ### Updated
 
 - Move to new gpipe action

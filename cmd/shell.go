@@ -15,24 +15,15 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/spf13/cobra"
-	"github.com/thomaslaurenson/narc/internal/shellenv"
 	"golang.org/x/term"
+
+	"github.com/thomaslaurenson/narc/internal/shellenv"
 )
 
-var shellOutputFileFlag string
-var shellLogFileFlag string
-
-var shellCmd = &cobra.Command{
-	Use:   "shell",
-	Short: "Start an interactive shell with all OpenStack API calls recorded",
-	Long: `Launches your default shell ($SHELL) with the narc proxy pre-configured.
-
-Run OpenStack commands as normal. Every API call is intercepted and recorded.
-Type 'exit' or press Ctrl-D to stop the session and write access_rules.json.
-
-Note: requires an interactive terminal (Linux, macOS, WSL). Windows native is
-not supported.`,
-	RunE: runShell,
+// shellOptions holds the flags of the shell command.
+type shellOptions struct {
+	logFile    string
+	outputFile string
 }
 
 // sessionBanner is printed at the start of a recording session. \r\n is used
@@ -43,16 +34,42 @@ const sessionBanner = "" +
 	"║      Type 'exit' or Ctrl-D to stop     ║\r\n" +
 	"╚════════════════════════════════════════╝\r\n"
 
-func runShell(_ *cobra.Command, _ []string) error {
-	if os.Getenv("NARC_RECORDING") == "1" {
+func (a *App) newShellCmd() *cobra.Command {
+	var opts shellOptions
+	c := &cobra.Command{
+		Use:   "shell",
+		Short: "Start an interactive shell with all OpenStack API calls recorded",
+		Long: `Launches your default shell ($SHELL) with the narc proxy pre-configured.
+
+Run OpenStack commands as normal. Every API call is intercepted and recorded.
+Type 'exit' or press Ctrl-D to stop the session and write access_rules.json.
+
+Note: requires an interactive terminal (Linux, macOS, WSL). Windows native is
+not supported.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return a.runShell(cmd, opts)
+		},
+	}
+	c.Flags().StringVarP(&opts.logFile, "log-file", "l", "", "path for unmatched-request log (default: ~/.narc/unmatched_requests.log)")
+	c.Flags().StringVarP(&opts.outputFile, "output", "o", "", "path for access rules output file (default: ~/.narc/access_rules.json)")
+	return c
+}
+
+func (a *App) runShell(cmd *cobra.Command, opts shellOptions) error {
+	if lookupEnv(a.environ, "NARC_RECORDING") == "1" {
 		return fmt.Errorf("already inside a narc recording session; nested narc shell is not supported")
 	}
 
-	if shellLogFileFlag != "" {
-		cfg.LogFile = shellLogFileFlag
+	cfg, err := a.loadConfig(cmd)
+	if err != nil {
+		return err
 	}
-	if shellOutputFileFlag != "" {
-		cfg.OutputFile = shellOutputFileFlag
+	if opts.logFile != "" {
+		cfg.LogFile = opts.logFile
+	}
+	if opts.outputFile != "" {
+		cfg.OutputFile = opts.outputFile
 	}
 	if err := ensureOutputDir(cfg.OutputFile); err != nil {
 		return err
@@ -70,24 +87,24 @@ func runShell(_ *cobra.Command, _ []string) error {
 	}
 
 	var onUnmatched func(string, string)
-	if debugFlag {
+	if a.debug {
 		onUnmatched = func(method, url string) {
 			rawLogf("[narc:debug] unmatched: %s %s\n", method, url)
 		}
 	}
 
-	p, az, certPath, unmatchedLog, err := startRecording(cfg.LogFile, onUnmatched, rawLogf)
+	p, az, certPath, unmatchedLog, err := a.startRecording(cfg, onUnmatched, rawLogf)
 	if err != nil {
 		return err
 	}
 
-	shellPath := os.Getenv("SHELL")
+	shellPath := lookupEnv(a.environ, "SHELL")
 	if shellPath == "" {
 		shellPath = "/bin/sh"
 	}
 
-	proxyEnv := buildEnv(p.Port, certPath)
-	kind := shellenv.Detect(shellPath, os.Environ())
+	proxyEnv := buildEnv(a.environ, p.Port, certPath)
+	kind := shellenv.Detect(shellPath, a.environ)
 
 	if kind == shellenv.ShellUnknown {
 		fmt.Fprintf(os.Stderr, "[narc] Unrecognised shell - prompt integration disabled. The session banner is your only recording indicator.\n")
@@ -103,8 +120,9 @@ func runShell(_ *cobra.Command, _ []string) error {
 	}
 	defer cleanup()
 
-	// shellPath comes from $SHELL - the subprocess launch is intentional.
-	sh := exec.Command(shellPath, shellArgs...) //nolint:gosec
+	// The default Cancel kills the shell when narc is told to stop, which ends
+	// the session the same way exit would and lets the rules be written.
+	sh := exec.CommandContext(cmd.Context(), shellPath, shellArgs...) //nolint:gosec
 	sh.Env = append(promptEnv, "NARC_RECORDING=1")
 
 	// Start the shell attached to a pseudo-terminal so readline, tab-completion,
@@ -163,16 +181,24 @@ func runShell(_ *cobra.Command, _ []string) error {
 	go func() { _, _ = io.Copy(ptmx, os.Stdin) }()
 	go func() { _, _ = io.Copy(os.Stdout, ptmx) }()
 
-	// Remind the user every 30 seconds that recording is still active.
+	// Remind the user every 30 seconds that recording is still active, until
+	// the shell exits.
+	done := make(chan struct{})
 	reminder := time.NewTicker(30 * time.Second)
 	defer reminder.Stop()
 	go func() {
-		for range reminder.C {
-			_, _ = os.Stderr.WriteString("\r\n[narc] still recording… (type 'exit' or Ctrl-D to stop)\r\n")
+		for {
+			select {
+			case <-reminder.C:
+				_, _ = os.Stderr.WriteString("\r\n[narc] still recording… (type 'exit' or Ctrl-D to stop)\r\n")
+			case <-done:
+				return
+			}
 		}
 	}()
 
 	runErr := sh.Wait()
+	close(done)
 
 	signal.Stop(sigwinch)
 	close(sigwinch)
@@ -185,7 +211,7 @@ func runShell(_ *cobra.Command, _ []string) error {
 	if unmatchedLog != nil {
 		_ = unmatchedLog.Close()
 	}
-	writeRulesOnExit(az)
+	writeRulesOnExit(az, cfg.OutputFile)
 
 	// Propagate the shell's exit code.
 	var exitErr *exec.ExitError
@@ -193,9 +219,4 @@ func runShell(_ *cobra.Command, _ []string) error {
 		return &ExitCodeError{Code: exitErr.ExitCode()}
 	}
 	return nil
-}
-
-func init() {
-	shellCmd.Flags().StringVarP(&shellLogFileFlag, "log-file", "l", "", "path for unmatched-request log (default: ~/.narc/unmatched_requests.log)")
-	shellCmd.Flags().StringVarP(&shellOutputFileFlag, "output", "o", "", "path for access rules output file (default: ~/.narc/access_rules.json)")
 }

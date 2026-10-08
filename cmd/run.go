@@ -1,28 +1,37 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+
 	"github.com/thomaslaurenson/narc/internal/analyzer"
 	"github.com/thomaslaurenson/narc/internal/catalog"
 	"github.com/thomaslaurenson/narc/internal/certmgr"
+	"github.com/thomaslaurenson/narc/internal/config"
 	"github.com/thomaslaurenson/narc/internal/output"
 	"github.com/thomaslaurenson/narc/internal/proxy"
 )
 
-var backgroundFlag bool
-var logFileFlag string
-var outputFileFlag string
-var showOutputFlag bool
+// subprocessGrace is how long a wrapped command has to exit after an interrupt
+// before it is killed.
+const subprocessGrace = 3 * time.Second
+
+// runOptions holds the flags of the run command.
+type runOptions struct {
+	background bool
+	logFile    string
+	outputFile string
+	showOutput bool
+}
 
 // proxyVar holds a proxy environment variable name and its resolved value.
 type proxyVar struct {
@@ -46,51 +55,70 @@ func proxyEnvVars(port int, certPath string) []proxyVar {
 	}
 }
 
-var runCmd = &cobra.Command{
-	Use:   "run",
-	Short: "Record OpenStack API calls made by a command and generate access rules",
-	RunE:  runRun,
+func (a *App) newRunCmd() *cobra.Command {
+	var opts runOptions
+	c := &cobra.Command{
+		Use:   "run",
+		Short: "Record OpenStack API calls made by a command and generate access rules",
+		// Checked as an argument validator rather than in RunE, so a missing
+		// command fails before narc.json is read or created.
+		Args: func(_ *cobra.Command, args []string) error {
+			if !opts.background && len(args) == 0 {
+				return errors.New("provide a command to wrap (narc run -- <cmd>) or use --background")
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return a.runRun(cmd, args, opts)
+		},
+	}
+	c.Flags().BoolVarP(&opts.background, "background", "b", false, "run proxy in background, print env vars for manual use")
+	c.Flags().StringVarP(&opts.logFile, "log-file", "l", "", "path for unmatched-request log (default: ~/.narc/unmatched_requests.log)")
+	c.Flags().StringVarP(&opts.outputFile, "output", "o", "", "path for access rules output file (default: ~/.narc/access_rules.json)")
+	c.Flags().BoolVar(&opts.showOutput, "show-output", false, "show subprocess stdout (stderr is always shown)")
+	return c
 }
 
-func runRun(_ *cobra.Command, args []string) error {
-	if !backgroundFlag && len(args) == 0 {
-		return fmt.Errorf("provide a command to wrap (narc run -- <cmd>) or use --background")
+func (a *App) runRun(cmd *cobra.Command, args []string, opts runOptions) error {
+	cfg, err := a.loadConfig(cmd)
+	if err != nil {
+		return err
 	}
-	if logFileFlag != "" {
-		cfg.LogFile = logFileFlag
+	if opts.logFile != "" {
+		cfg.LogFile = opts.logFile
 	}
-	if outputFileFlag != "" {
-		cfg.OutputFile = outputFileFlag
+	if opts.outputFile != "" {
+		cfg.OutputFile = opts.outputFile
 	}
 	if err := ensureOutputDir(cfg.OutputFile); err != nil {
 		return err
 	}
 
 	var onUnmatched func(string, string)
-	if debugFlag {
+	if a.debug {
 		onUnmatched = func(method, url string) {
 			fmt.Fprintf(os.Stderr, "[narc:debug] unmatched: %s %s\n", method, url)
 		}
 	}
 
-	p, az, certPath, unmatchedLog, err := startRecording(cfg.LogFile, onUnmatched, nil)
+	p, az, certPath, unmatchedLog, err := a.startRecording(cfg, onUnmatched, nil)
 	if err != nil {
 		return err
 	}
 
-	if backgroundFlag {
-		runBackground(p, az, certPath, unmatchedLog)
+	if opts.background {
+		runBackground(cmd.Context(), p, az, certPath, unmatchedLog, cfg.OutputFile)
 		return nil
 	}
 
-	exitCode := runSubprocess(args, buildEnv(p.Port, certPath), showOutputFlag)
+	exitCode := runSubprocess(cmd.Context(), args, buildEnv(a.environ, p.Port, certPath), opts.showOutput)
 
 	fmt.Fprintf(os.Stderr, "[narc] Shutting down...\n")
 	p.Stop()
 	if unmatchedLog != nil {
 		_ = unmatchedLog.Close()
 	}
-	writeRulesOnExit(az)
+	writeRulesOnExit(az, cfg.OutputFile)
 	if exitCode != 0 {
 		return &ExitCodeError{Code: exitCode}
 	}
@@ -99,17 +127,17 @@ func runRun(_ *cobra.Command, args []string) error {
 
 // startRecording creates the catalog, analyzer, and proxy, starts the proxy,
 // and returns them ready for use. Shared between the run and shell commands.
-// logFile is opened for unmatched-URL logging (nil if empty). onUnmatched is
+// cfg.LogFile is opened for unmatched-URL logging (nil if empty). onUnmatched is
 // the debug callback; nil disables it. Both decisions belong to the caller.
 // logf is used for all narc status output; nil defaults to fmt.Fprintf(os.Stderr, ...).
-func startRecording(logFile string, onUnmatched func(string, string), logf func(string, ...any)) (*proxy.Proxy, *analyzer.Analyzer, string, *output.UnmatchedLog, error) {
+func (a *App) startRecording(cfg *config.Config, onUnmatched func(string, string), logf func(string, ...any)) (*proxy.Proxy, *analyzer.Analyzer, string, *output.UnmatchedLog, error) {
 	if logf == nil {
 		logf = func(format string, args ...any) { fmt.Fprintf(os.Stderr, format, args...) }
 	}
 	var unmatchedLog *output.UnmatchedLog
-	if logFile != "" {
+	if cfg.LogFile != "" {
 		var err error
-		unmatchedLog, err = output.OpenUnmatchedLog(logFile)
+		unmatchedLog, err = output.OpenUnmatchedLog(cfg.LogFile)
 		if err != nil {
 			return nil, nil, "", nil, fmt.Errorf("open unmatched log: %w", err)
 		}
@@ -120,7 +148,7 @@ func startRecording(logFile string, onUnmatched func(string, string), logf func(
 		logf("[narc] %-20s %-8s %s\n", rule.Service, rule.Method, rule.Path)
 	}, onUnmatched)
 
-	p, err := proxy.New(cfg.ProxyPort, debugFlag, cat, az, unmatchedLog, logf)
+	p, err := proxy.New(cfg.ProxyPort, a.debug, cat, az, unmatchedLog, logf)
 	if err != nil {
 		if unmatchedLog != nil {
 			_ = unmatchedLog.Close()
@@ -147,13 +175,13 @@ func startRecording(logFile string, onUnmatched func(string, string), logf func(
 	return p, az, certPath, unmatchedLog, nil
 }
 
-func writeRulesOnExit(az *analyzer.Analyzer) {
-	n, err := az.WriteRules(cfg.OutputFile)
+func writeRulesOnExit(az *analyzer.Analyzer, outputFile string) {
+	n, err := az.WriteRules(outputFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[narc:error] Failed to write rules: %v\n", err)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "[narc] Done. %d unique access rule(s) written to %s\n", n, cfg.OutputFile)
+	fmt.Fprintf(os.Stderr, "[narc] Done. %d unique access rule(s) written to %s\n", n, outputFile)
 }
 
 // ensureOutputDir checks that the directory containing outPath exists, and
@@ -167,9 +195,9 @@ func ensureOutputDir(outPath string) error {
 	return nil
 }
 
-// buildEnv returns a copy of the current process environment with all proxy-related
-// vars removed and replaced by the narc proxy settings.
-func buildEnv(port int, caCertPath string) []string {
+// buildEnv returns a copy of environ with all proxy-related vars removed and
+// replaced by the narc proxy settings.
+func buildEnv(environ []string, port int, caCertPath string) []string {
 	vars := proxyEnvVars(port, caCertPath)
 
 	keys := make(map[string]bool, len(vars))
@@ -177,8 +205,8 @@ func buildEnv(port int, caCertPath string) []string {
 		keys[v.key] = true
 	}
 
-	env := make([]string, 0, len(os.Environ())+len(vars))
-	for _, kv := range os.Environ() {
+	env := make([]string, 0, len(environ)+len(vars))
+	for _, kv := range environ {
 		key, _, _ := strings.Cut(kv, "=")
 		if !keys[key] {
 			env = append(env, kv)
@@ -190,75 +218,54 @@ func buildEnv(port int, caCertPath string) []string {
 	return env
 }
 
-// runSubprocess starts args[0] with the remaining args and waits for it to exit
-// or for Ctrl+C. On Ctrl+C, the child is given 3 seconds to exit naturally (it
-// receives SIGINT via the shared process group) before being killed.
+// runSubprocess starts args[0] with the remaining args and waits for it to exit.
 // stdout is discarded unless showOutput is true; stderr is always forwarded so
 // that errors and warnings from the subprocess remain visible.
 // Returns the wrapped command's exit code, or 1 on start failure.
-func runSubprocess(args []string, env []string, showOutput bool) int {
-	// args[0] is the user's explicitly provided command-this subprocess launch is intentional.
-	cmd := exec.Command(args[0], args[1:]...) //nolint:gosec
-	cmd.Stdin = os.Stdin
+func runSubprocess(ctx context.Context, args []string, env []string, showOutput bool) int {
+	c := exec.CommandContext(ctx, args[0], args[1:]...)
+	// The child shares the terminal's process group, so a Ctrl-C has already
+	// reached it by the time ctx is cancelled. Cancel therefore sends nothing,
+	// and WaitDelay kills the child only if it is still running after the grace
+	// period. The default Cancel would kill it at once, before it could exit
+	// cleanly.
+	c.Cancel = nil
+	c.WaitDelay = subprocessGrace
+	c.Stdin = os.Stdin
 	if showOutput {
-		cmd.Stdout = os.Stdout
+		c.Stdout = os.Stdout
 	} else {
-		cmd.Stdout = io.Discard
+		c.Stdout = io.Discard
 	}
-	cmd.Stderr = os.Stderr
-	cmd.Env = env
+	c.Stderr = os.Stderr
+	c.Env = env
 
-	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "[narc:error] Failed to start subprocess: %v\n", err)
-		return 1
-	}
-
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, shutdownSignals...)
-	defer signal.Stop(quit)
-
-	var waitErr error
-	select {
-	case <-quit:
-		// Child is in the same process group and will receive SIGINT too.
-		// Give it up to 3 seconds to exit cleanly before killing it.
-		select {
-		case waitErr = <-done:
-		case <-time.After(3 * time.Second):
-			_ = cmd.Process.Kill()
-			waitErr = <-done
-		}
-	case waitErr = <-done:
-	}
-
-	if waitErr != nil {
+	if err := c.Run(); err != nil {
 		var exitErr *exec.ExitError
-		if errors.As(waitErr, &exitErr) {
+		if errors.As(err, &exitErr) {
 			return exitErr.ExitCode()
 		}
+		fmt.Fprintf(os.Stderr, "[narc:error] Failed to run subprocess: %v\n", err)
 		return 1
 	}
 	return 0
 }
 
-func runBackground(p *proxy.Proxy, az *analyzer.Analyzer, certPath string, unmatchedLog *output.UnmatchedLog) {
+// runBackground prints the proxy environment and waits until ctx is cancelled,
+// which is how a background session is stopped.
+func runBackground(ctx context.Context, p *proxy.Proxy, az *analyzer.Analyzer, certPath string, unmatchedLog *output.UnmatchedLog, outputFile string) {
 	fmt.Fprintf(os.Stderr, "[narc] Running in background. PID: %d\n", os.Getpid())
 	fmt.Fprintf(os.Stderr, "[narc] Run the following in your shell:\n")
 	printProxyEnv(p.Port, certPath)
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, shutdownSignals...)
-	<-quit
+	<-ctx.Done()
 
 	fmt.Fprintf(os.Stderr, "\n[narc] Shutting down...\n")
 	p.Stop()
 	if unmatchedLog != nil {
 		_ = unmatchedLog.Close()
 	}
-	writeRulesOnExit(az)
+	writeRulesOnExit(az, outputFile)
 }
 
 // printProxyEnv prints shell export statements for the narc proxy environment.
@@ -268,11 +275,4 @@ func printProxyEnv(port int, certPath string) {
 	for _, v := range proxyEnvVars(port, certPath) {
 		fmt.Fprintf(os.Stderr, "  export %s='%s'\n", v.key, v.value)
 	}
-}
-
-func init() {
-	runCmd.Flags().BoolVarP(&backgroundFlag, "background", "b", false, "run proxy in background, print env vars for manual use")
-	runCmd.Flags().StringVarP(&logFileFlag, "log-file", "l", "", "path for unmatched-request log (default: ~/.narc/unmatched_requests.log)")
-	runCmd.Flags().StringVarP(&outputFileFlag, "output", "o", "", "path for access rules output file (default: ~/.narc/access_rules.json)")
-	runCmd.Flags().BoolVar(&showOutputFlag, "show-output", false, "show subprocess stdout (stderr is always shown)")
 }
