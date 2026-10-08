@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.6 - 2026-08-14
+## 0.5.6 - 2026-10-08
 
 ### Added
 
@@ -19,6 +19,7 @@
 ### Updated
 
 - Move to new gpipe action
+- Build release binaries with the newest Go 1.26 patch release
 
 ## 0.5.5 - 2026-07-17
 

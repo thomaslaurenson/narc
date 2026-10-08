@@ -1,10 +1,10 @@
 # narc
 
-![Build Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/narc/tag.yml?style=flat&logo=github) ![Test Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/narc/tag.yml?style=flat&label=test&logo=github)
+![Release Build](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/narc/tag.yml?style=flat&label=release&logo=github) ![Main Build](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/narc/main.yml?style=flat&label=main&logo=github)
 
-![Release Version](https://img.shields.io/github/v/release/thomaslaurenson/narc?style=flat&logo=github) ![Release downloads](https://img.shields.io/github/downloads/thomaslaurenson/narc/total?label=downloads&logo=github)
+![Release Version](https://img.shields.io/github/v/release/thomaslaurenson/narc?style=flat&logo=github) ![Release downloads](https://img.shields.io/github/downloads/thomaslaurenson/narc/total?style=flat&label=downloads&logo=github)
 
-![Go Version](https://img.shields.io/github/go-mod/go-version/thomaslaurenson/narc?logo=go) ![Code Coverage](https://img.shields.io/badge/Coverage-74.9%25-blue?logo=go)
+![Go Version](https://img.shields.io/github/go-mod/go-version/thomaslaurenson/narc?style=flat&logo=go) ![Code Coverage](https://img.shields.io/badge/Coverage-78.6%25-blue?style=flat&logo=go)
 
 The Nectar Access Rules Creator, or `narc`, is a tool to help construct OpenStack Access Rules for Application Credentials.
 
@@ -95,7 +95,7 @@ thomas@t1000:~$ narc shell
 
 > **Note:** Running `narc shell` inside an existing `narc shell` is not supported and will exit with an error. Use `narc run -- <cmd>` to record a specific command from within an active session if needed.
 
-## Usage Examples
+## Usage examples
 
 ### OpenStack CLI
 
@@ -144,7 +144,7 @@ narc run -- python my_openstack_script.py
 }
 ```
 
-## Environment Variables
+## Environment variables
 
 When `narc run` wraps a subprocess, it injects the following into the child's environment:
 
@@ -156,7 +156,7 @@ When `narc run` wraps a subprocess, it injects the following into the child's en
 | `REQUESTS_CA_BUNDLE` | `~/.narc/ca.pem` |
 | `OS_CACERT` | `~/.narc/ca.pem` |
 
-## Shell Prompt Integration
+## Shell prompt integration
 
 `narc shell` injects a `(narc)` prefix into your prompt so you always know a recording session is active. Support varies by shell:
 
@@ -172,6 +172,6 @@ When `narc run` wraps a subprocess, it injects the following into the child's en
 
 These frameworks manage their own prompt rendering and cannot be reliably injected from outside. The `(narc)` prefix will not appear in your prompt if you use them. The session banner at startup is always shown regardless. If you use one of these frameworks, you can add your own indicator using the `NARC_RECORDING` environment variable, which is always set to `1` inside a narc session:
 
-## CA Certificate
+## CA certificate
 
 `narc` uses a local CA certificate to perform HTTPS interception (MITM). The certificate is generated automatically at `~/.narc/ca.pem` on first run and is valid for 2 years (auto-renewed when expiry is within 30 days). No manual setup is required.
