@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -15,106 +16,118 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/spf13/cobra"
-	"github.com/thomaslaurenson/narc/internal/shellenv"
 	"golang.org/x/term"
+
+	"github.com/thomaslaurenson/narc/internal/config"
+	"github.com/thomaslaurenson/narc/internal/shellenv"
 )
 
-var shellOutputFileFlag string
-var shellLogFileFlag string
+// shellOptions holds the flags of the shell command.
+type shellOptions struct {
+	logFile    string
+	outputFile string
+}
 
-var shellCmd = &cobra.Command{
-	Use:   "shell",
-	Short: "Start an interactive shell with all OpenStack API calls recorded",
-	Long: `Launches your default shell ($SHELL) with the narc proxy pre-configured.
+var (
+	errNestedSession = errors.New("already inside a narc recording session; nested narc shell is not supported")
+	errNoTerminal    = errors.New("narc shell needs an interactive terminal; use narc run -- <command> instead")
+)
+
+// sessionBanner is printed when a recording session starts.
+const sessionBanner = `
++----------------------------------------+
+|      narc is recording this session    |
+|      Type 'exit' or Ctrl-D to stop     |
++----------------------------------------+
+`
+
+func (a *App) newShellCmd() *cobra.Command {
+	var opts shellOptions
+	c := &cobra.Command{
+		Use:   "shell",
+		Short: "Start an interactive shell with all OpenStack API calls recorded",
+		Long: `Launches your default shell ($SHELL) with the narc proxy pre-configured.
 
 Run OpenStack commands as normal. Every API call is intercepted and recorded.
 Type 'exit' or press Ctrl-D to stop the session and write access_rules.json.
 
 Note: requires an interactive terminal (Linux, macOS, WSL). Windows native is
 not supported.`,
-	RunE: runShell,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return a.runShell(cmd, opts)
+		},
+	}
+	c.Flags().StringVarP(&opts.logFile, "log-file", "l", "", "path for unmatched-request log (default: ~/.narc/unmatched_requests.log)")
+	c.Flags().StringVarP(&opts.outputFile, "output", "o", "", "path for access rules output file (default: ~/.narc/access_rules.json)")
+	return c
 }
 
-// sessionBanner is printed at the start of a recording session. \r\n is used
-// because the outer terminal will be in raw mode when it is displayed.
-const sessionBanner = "" +
-	"\r\n╔════════════════════════════════════════╗\r\n" +
-	"║      narc is recording this session    ║\r\n" +
-	"║      Type 'exit' or Ctrl-D to stop     ║\r\n" +
-	"╚════════════════════════════════════════╝\r\n"
-
-func runShell(_ *cobra.Command, _ []string) error {
-	if os.Getenv("NARC_RECORDING") == "1" {
-		return fmt.Errorf("already inside a narc recording session; nested narc shell is not supported")
+func (a *App) runShell(cmd *cobra.Command, opts shellOptions) error {
+	if lookupEnv(a.environ, "NARC_RECORDING") == "1" {
+		return errNestedSession
 	}
 
-	if shellLogFileFlag != "" {
-		cfg.LogFile = shellLogFileFlag
+	// The session drives the real terminal: raw mode and the pty size both act
+	// on the process's own stdin, so an injected reader cannot stand in for it.
+	stdinFd := int(os.Stdin.Fd())
+	if !term.IsTerminal(stdinFd) {
+		return errNoTerminal
 	}
-	if shellOutputFileFlag != "" {
-		cfg.OutputFile = shellOutputFileFlag
+
+	cfg, home, err := a.loadConfig(cmd)
+	if err != nil {
+		return err
+	}
+	if opts.logFile != "" {
+		cfg.LogFile = opts.logFile
+	}
+	if opts.outputFile != "" {
+		cfg.OutputFile = opts.outputFile
 	}
 	if err := ensureOutputDir(cfg.OutputFile); err != nil {
 		return err
 	}
 
-	// rawLogf writes to stderr with \r\n so lines are correctly rendered while
-	// the outer terminal is in raw mode (used for the entire shell session).
-	rawLogf := func(format string, args ...any) {
-		// Replace any trailing \n with \r\n so the cursor returns to column 0.
-		s := fmt.Sprintf(format, args...)
-		if len(s) > 0 && s[len(s)-1] == '\n' {
-			s = s[:len(s)-1] + "\r\n"
-		}
-		fmt.Fprint(os.Stderr, s)
-	}
+	// Everything narc writes during the session goes through crlfWriter, since
+	// the terminal is in raw mode for most of it.
+	ctx := cmd.Context()
+	status := &syncWriter{w: crlfWriter{w: cmd.ErrOrStderr()}}
+	logger := newLogger(status, a.debug)
 
-	var onUnmatched func(string, string)
-	if debugFlag {
-		onUnmatched = func(method, url string) {
-			rawLogf("[narc:debug] unmatched: %s %s\n", method, url)
-		}
-	}
-
-	p, az, certPath, unmatchedLog, err := startRecording(cfg.LogFile, onUnmatched, rawLogf)
+	s, err := startSession(ctx, cfg, config.Dir(home), status, logger)
 	if err != nil {
 		return err
 	}
 
-	shellPath := os.Getenv("SHELL")
+	shellPath := lookupEnv(a.environ, "SHELL")
 	if shellPath == "" {
 		shellPath = "/bin/sh"
 	}
 
-	proxyEnv := buildEnv(p.Port, certPath)
-	kind := shellenv.Detect(shellPath, os.Environ())
-
+	kind := shellenv.Detect(shellPath, a.environ)
 	if kind == shellenv.ShellUnknown {
-		fmt.Fprintf(os.Stderr, "[narc] Unrecognised shell - prompt integration disabled. The session banner is your only recording indicator.\n")
+		fmt.Fprintf(status, "[!] Unrecognised shell, so no prompt prefix: the session banner is the only recording indicator\n")
 	}
 
-	promptEnv, shellArgs, cleanup, err := shellenv.BuildPromptEnv(kind, proxyEnv)
+	proxyEnv := buildEnv(a.environ, s.proxy.Port, s.certPath)
+	promptEnv, shellArgs, cleanup, err := shellenv.BuildPromptEnv(kind, proxyEnv, home)
 	if err != nil {
-		p.Stop()
-		if unmatchedLog != nil {
-			_ = unmatchedLog.Close()
-		}
+		s.abort(ctx)
 		return fmt.Errorf("build prompt env: %w", err)
 	}
 	defer cleanup()
 
-	// shellPath comes from $SHELL - the subprocess launch is intentional.
-	sh := exec.Command(shellPath, shellArgs...) //nolint:gosec
+	// The default Cancel kills the shell when narc is told to stop, which ends
+	// the session the same way exit would and lets the rules be written.
+	sh := exec.CommandContext(ctx, shellPath, shellArgs...)
 	sh.Env = append(promptEnv, "NARC_RECORDING=1")
 
 	// Start the shell attached to a pseudo-terminal so readline, tab-completion,
 	// and prompt colours all work correctly without shell-specific wiring.
 	ptmx, err := pty.Start(sh)
 	if err != nil {
-		p.Stop()
-		if unmatchedLog != nil {
-			_ = unmatchedLog.Close()
-		}
+		s.abort(ctx)
 		return fmt.Errorf("start pty: %w", err)
 	}
 	defer func() { _ = ptmx.Close() }()
@@ -137,17 +150,13 @@ func runShell(_ *cobra.Command, _ []string) error {
 
 	// Put the outer terminal into raw mode: keystrokes pass directly to the pty
 	// without line-buffering, echo, or control-character processing by the host.
-	stdinFd := int(os.Stdin.Fd()) //nolint:gosec // fd is always a small non-negative value
 	oldState, err := term.MakeRaw(stdinFd)
 	if err != nil {
 		signal.Stop(sigwinch)
 		close(sigwinch)
 		_ = sh.Process.Kill()
 		_ = sh.Wait()
-		p.Stop()
-		if unmatchedLog != nil {
-			_ = unmatchedLog.Close()
-		}
+		s.abort(ctx)
 		return fmt.Errorf("set raw mode: %w", err)
 	}
 	var restoreOnce sync.Once
@@ -156,36 +165,40 @@ func runShell(_ *cobra.Command, _ []string) error {
 	}
 	defer restoreTerminal()
 
-	// Banner printed after entering raw mode so \r\n renders correctly.
-	_, _ = os.Stderr.WriteString(sessionBanner)
+	fmt.Fprint(status, sessionBanner)
 
-	// Bidirectional copy: user keystrokes → pty, shell output → stdout.
+	// Bidirectional copy: user keystrokes -> pty, shell output -> stdout.
 	go func() { _, _ = io.Copy(ptmx, os.Stdin) }()
-	go func() { _, _ = io.Copy(os.Stdout, ptmx) }()
+	go func() { _, _ = io.Copy(cmd.OutOrStdout(), ptmx) }()
 
-	// Remind the user every 30 seconds that recording is still active.
+	// Remind the user every 30 seconds that recording is still active, until
+	// the shell exits.
+	done := make(chan struct{})
 	reminder := time.NewTicker(30 * time.Second)
 	defer reminder.Stop()
 	go func() {
-		for range reminder.C {
-			_, _ = os.Stderr.WriteString("\r\n[narc] still recording… (type 'exit' or Ctrl-D to stop)\r\n")
+		for {
+			select {
+			case <-reminder.C:
+				fmt.Fprintf(status, "\n[*] Still recording (type 'exit' or Ctrl-D to stop)\n")
+			case <-done:
+				return
+			}
 		}
 	}()
 
 	runErr := sh.Wait()
+	close(done)
 
 	signal.Stop(sigwinch)
 	close(sigwinch)
 
-	// Restore terminal before printing shutdown messages so normal \n works.
 	restoreTerminal()
 
-	fmt.Fprintf(os.Stderr, "\n[narc] Shutting down...\n")
-	p.Stop()
-	if unmatchedLog != nil {
-		_ = unmatchedLog.Close()
+	fmt.Fprintln(status)
+	if err := s.finish(ctx); err != nil {
+		return err
 	}
-	writeRulesOnExit(az)
 
 	// Propagate the shell's exit code.
 	var exitErr *exec.ExitError
@@ -195,7 +208,16 @@ func runShell(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func init() {
-	shellCmd.Flags().StringVarP(&shellLogFileFlag, "log-file", "l", "", "path for unmatched-request log (default: ~/.narc/unmatched_requests.log)")
-	shellCmd.Flags().StringVarP(&shellOutputFileFlag, "output", "o", "", "path for access rules output file (default: ~/.narc/access_rules.json)")
+// crlfWriter turns each "\n" into "\r\n". A terminal in raw mode moves down a
+// line on "\n" without returning to the first column, so plain newlines would
+// leave each line starting where the last one ended.
+type crlfWriter struct {
+	w io.Writer
+}
+
+func (c crlfWriter) Write(p []byte) (int, error) {
+	if _, err := c.w.Write(bytes.ReplaceAll(p, []byte("\n"), []byte("\r\n"))); err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }

@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.6 - 2026-10-08
+
+### Added
+
+- Add a --version flag, and accept --port 0 to pick any free port
+
+### Changed
+
+- Mark narc's own output with [*], [+], [~] and [!], and print debug output as key=value log lines
+
+### Fixed
+
+- Fix a bare narc invocation exiting zero, and go install builds reporting their version as dev
+- Fix narc shell leaving the terminal raw and writing no rules when narc is terminated
+- Fix narc exiting zero when the rules file cannot be written, and emptying it when a command fails to start
+
+### Updated
+
+- Move to new gpipe action
+- Build release binaries with the newest Go 1.26 patch release
+
 ## 0.5.5 - 2026-07-17
 
 ### Updated

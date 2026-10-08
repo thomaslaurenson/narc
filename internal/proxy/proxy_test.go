@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/thomaslaurenson/narc/internal/catalog"
+	"github.com/thomaslaurenson/narc/internal/certmgr"
 )
 
 func TestIsKeystoneAuthPath(t *testing.T) {
@@ -30,31 +33,45 @@ func TestIsKeystoneAuthPath(t *testing.T) {
 	}
 }
 
-func TestProxyNewNilCatalogAndHandler(t *testing.T) {
-	ResetForTesting()
-	t.Setenv("HOME", t.TempDir())
-
-	p, err := New(0, false, nil, nil, nil, nil)
+// testCA generates a CA in a temporary directory and loads it.
+func testCA(t *testing.T) tls.Certificate {
+	t.Helper()
+	dir := t.TempDir()
+	if _, err := certmgr.EnsureCACert(dir); err != nil {
+		t.Fatalf("EnsureCACert: %v", err)
+	}
+	ca, err := certmgr.LoadTLSCert(dir)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("LoadTLSCert: %v", err)
 	}
-	if p == nil {
-		t.Fatal("New returned nil proxy")
-	}
+	return ca
 }
 
-func TestProxyNewDoubleInstantiation(t *testing.T) {
-	ResetForTesting()
-	t.Setenv("HOME", t.TempDir())
-
-	_, err := New(0, false, nil, nil, nil, nil)
-	if err != nil {
-		t.Fatalf("first New: %v", err)
+func TestProxyNewNilCatalogAndHandler(t *testing.T) {
+	t.Parallel()
+	p := New(Options{CA: testCA(t)})
+	if err := p.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
+	p.Stop(context.Background())
+}
 
-	_, err = New(0, false, nil, nil, nil, nil)
-	if err == nil {
-		t.Fatal("second New: expected an error, got nil")
+func TestProxyTwoInstances(t *testing.T) {
+	t.Parallel()
+	first := New(Options{CA: testCA(t)})
+	if err := first.Start(context.Background()); err != nil {
+		t.Fatalf("first Start: %v", err)
+	}
+	defer first.Stop(context.Background())
+
+	second := New(Options{CA: testCA(t)})
+	if err := second.Start(context.Background()); err != nil {
+		t.Fatalf("second Start: %v", err)
+	}
+	defer second.Stop(context.Background())
+
+	if first.Port == second.Port {
+		t.Errorf("both proxies report port %d", first.Port)
 	}
 }
 
@@ -68,9 +85,7 @@ func (m *mockHandler) HandleRequest(method, rawURL string) {
 }
 
 func TestProxyIntegration(t *testing.T) {
-	ResetForTesting()
-	t.Setenv("HOME", t.TempDir())
-
+	t.Parallel()
 	// Start a trivial target HTTP server.
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -80,14 +95,11 @@ func TestProxyIntegration(t *testing.T) {
 	cat := catalog.NewCatalog()
 	handler := &mockHandler{}
 
-	p, err := New(0, false, cat, handler, nil, nil)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	if err := p.Start(); err != nil {
+	p := New(Options{CA: testCA(t), Catalog: cat, Handler: handler})
+	if err := p.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	defer p.Stop()
+	defer p.Stop(context.Background())
 
 	// Send a plain HTTP request through the proxy.
 	proxyURL, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", p.Port))

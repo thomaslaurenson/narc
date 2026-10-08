@@ -38,9 +38,10 @@ func Detect(shellPath string, env []string) ShellKind {
 // BuildPromptEnv returns a modified copy of baseEnv with prompt integration
 // variables set for the given shell kind. It also returns any additional shell
 // launch arguments (e.g. --rcfile for bash), a cleanup function that removes
-// any temporary files or directories, and any error.
+// any temporary files or directories, and any error. home is where zsh looks
+// for its startup files when ZDOTDIR is unset.
 // The caller must defer cleanup() to ensure temp files are removed.
-func BuildPromptEnv(kind ShellKind, baseEnv []string) (env []string, shellArgs []string, cleanup func(), err error) {
+func BuildPromptEnv(kind ShellKind, baseEnv []string, home string) (env []string, shellArgs []string, cleanup func(), err error) {
 	switch kind {
 	case ShellFish:
 		env, cleanup, err = buildFishEnv(baseEnv)
@@ -48,7 +49,7 @@ func BuildPromptEnv(kind ShellKind, baseEnv []string) (env []string, shellArgs [
 	case ShellBash:
 		return buildBashEnv(baseEnv)
 	case ShellZsh, ShellZshOMZ:
-		env, cleanup, err = buildZshEnv(kind, baseEnv)
+		env, cleanup, err = buildZshEnv(kind, baseEnv, home)
 		return env, nil, cleanup, err
 	default:
 		return baseEnv, nil, func() {}, nil

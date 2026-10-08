@@ -1,6 +1,6 @@
 module github.com/thomaslaurenson/narc
 
-go 1.26.2
+go 1.26
 
 require (
 	github.com/creack/pty v1.1.24

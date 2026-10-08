@@ -12,12 +12,11 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math/big"
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/thomaslaurenson/narc/internal/config"
 )
 
 const (
@@ -27,54 +26,48 @@ const (
 	certRenewBefore = 30 * 24 * time.Hour
 )
 
-// CACertPath returns the path to the narc CA certificate file.
-func CACertPath() (string, error) {
-	dir, err := config.NarcDirPath()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, caCertFilename), nil
+// Status reports what EnsureCACert did to the CA.
+type Status int
+
+const (
+	// StatusCurrent means the existing CA was valid and was kept.
+	StatusCurrent Status = iota
+	// StatusCreated means no CA existed, so one was generated.
+	StatusCreated
+	// StatusRenewed means the CA was near expiry, so it was regenerated.
+	StatusRenewed
+)
+
+// CACertPath returns the path of the CA certificate in dir.
+func CACertPath(dir string) string {
+	return filepath.Join(dir, caCertFilename)
 }
 
-func caKeyPath() (string, error) {
-	dir, err := config.NarcDirPath()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, caKeyFilename), nil
+func caKeyPath(dir string) string {
+	return filepath.Join(dir, caKeyFilename)
 }
 
-// EnsureCACert creates or rotates the CA certificate and key if they are
-// absent or nearing expiry.
-func EnsureCACert() error {
-	// Ensure the directory exists before we attempt any writes.
-	if _, err := config.NarcDir(); err != nil {
-		return err
+// EnsureCACert creates the CA certificate and key in dir when either is absent,
+// regenerates them when the certificate is near expiry, and reports which it
+// did.
+func EnsureCACert(dir string) (Status, error) {
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return StatusCurrent, err
 	}
 
-	certPath, err := CACertPath()
-	if err != nil {
-		return err
-	}
-	keyPath, err := caKeyPath()
-	if err != nil {
-		return err
-	}
+	certPath := CACertPath(dir)
+	keyPath := caKeyPath(dir)
 
 	_, certErr := os.Stat(certPath)
 	_, keyErr := os.Stat(keyPath)
 
-	if errors.Is(certErr, os.ErrNotExist) || errors.Is(keyErr, os.ErrNotExist) {
-		fmt.Fprintf(os.Stderr, "[narc] Generating CA certificate...\n")
-		return generateCACert(certPath, keyPath)
+	if errors.Is(certErr, fs.ErrNotExist) || errors.Is(keyErr, fs.ErrNotExist) {
+		return StatusCreated, generateCACert(certPath, keyPath)
 	}
-
-	// Rotate the cert if it expires soon.
 	if needsRenewal(certPath) {
-		fmt.Fprintf(os.Stderr, "[narc] CA certificate expires soon - regenerating...\n")
-		return generateCACert(certPath, keyPath)
+		return StatusRenewed, generateCACert(certPath, keyPath)
 	}
-	return nil
+	return StatusCurrent, nil
 }
 
 // needsRenewal reports whether the PEM cert at path is missing, unparseable,
@@ -95,18 +88,20 @@ func needsRenewal(path string) bool {
 	return cert.NotAfter.Before(time.Now().Add(certRenewBefore))
 }
 
-// LoadTLSCert loads the CA certificate and key pair from disk and returns it
-// as a tls.Certificate ready for use with goproxy.
-func LoadTLSCert() (tls.Certificate, error) {
-	certPath, err := CACertPath()
+// LoadTLSCert loads the CA certificate and key pair from dir, with Leaf
+// populated, since goproxy signs each per-host certificate with the Leaf.
+func LoadTLSCert(dir string) (tls.Certificate, error) {
+	cert, err := tls.LoadX509KeyPair(CACertPath(dir), caKeyPath(dir))
 	if err != nil {
 		return tls.Certificate{}, err
 	}
-	keyPath, err := caKeyPath()
-	if err != nil {
-		return tls.Certificate{}, err
+	if cert.Leaf == nil {
+		cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
+		if err != nil {
+			return tls.Certificate{}, fmt.Errorf("parse CA certificate %q: %w", CACertPath(dir), err)
+		}
 	}
-	return tls.LoadX509KeyPair(certPath, keyPath)
+	return cert, nil
 }
 
 func generateCACert(certPath, keyPath string) error {

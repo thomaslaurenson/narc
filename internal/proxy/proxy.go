@@ -5,120 +5,119 @@ package proxy
 import (
 	"bytes"
 	"context"
-	"crypto/x509"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/elazarl/goproxy"
+
 	"github.com/thomaslaurenson/narc/internal/catalog"
-	"github.com/thomaslaurenson/narc/internal/certmgr"
 	"github.com/thomaslaurenson/narc/internal/output"
 )
 
 // maxKeystoneBodyBytes caps the Keystone token response read to protect against
 // an adversarial or misconfigured endpoint returning an unbounded body.
-const maxKeystoneBodyBytes = 1 << 20 // 1 MiB - far larger than any real token response
+const maxKeystoneBodyBytes = 1 << 20 // 1 MiB, far larger than any real token response
+
+// shutdownTimeout bounds how long Stop waits for in-flight requests.
+const shutdownTimeout = 5 * time.Second
 
 // RequestHandler is called for every intercepted request.
 type RequestHandler interface {
 	HandleRequest(method, url string)
 }
 
+// Options configures a Proxy. CA is required; every other field may be left at
+// its zero value.
+type Options struct {
+	// Port is the port to listen on, where 0 picks any free port.
+	Port int
+	// CA signs the per-host certificates presented to intercepted clients.
+	CA tls.Certificate
+	// Catalog is populated from intercepted Keystone token responses.
+	Catalog *catalog.Catalog
+	// Handler is notified of every request.
+	Handler RequestHandler
+	// UnmatchedLog records requests that arrive before the catalog is loaded.
+	UnmatchedLog *output.UnmatchedLog
+	// Status receives the lines written for the person running narc.
+	Status io.Writer
+	// Logger receives diagnostics.
+	Logger *slog.Logger
+}
+
 // Proxy is an HTTP/HTTPS man-in-the-middle proxy that intercepts OpenStack API
 // traffic and notifies a RequestHandler for each request.
 type Proxy struct {
-	Port         int
-	Debug        bool
-	handler      RequestHandler
+	// Port is the port the proxy listens on, updated by Start to the port it
+	// actually bound.
+	Port int
+
+	mitm         *goproxy.ConnectAction
 	cat          *catalog.Catalog
+	handler      RequestHandler
 	unmatchedLog *output.UnmatchedLog
+	status       io.Writer
+	logger       *slog.Logger
 	server       *http.Server
-	cancel       context.CancelFunc
-	logf         func(string, ...any)
 }
 
-// proxyCreated guards against creating more than one Proxy per process.
-// goproxy.GoproxyCa is a package-level global; a second New call would
-// silently overwrite the CA used by the first, causing hard-to-diagnose
-// TLS failures.
-var proxyCreated atomic.Bool
-
-// New creates a Proxy. It ensures the CA certificate exists and loads it.
-// cat and handler may be nil; when non-nil, cat is used to intercept Keystone
-// token responses and handler is notified of every request.
-// unmatchedLog is used to log pre-catalog requests; nil disables logging.
-// logf is used for all internal log output; nil defaults to fmt.Fprintf(os.Stderr, ...).
-// NOTE: goproxy.GoproxyCa is a package-level global, so only one Proxy
-// instance per process is supported.
-func New(port int, debug bool, cat *catalog.Catalog, handler RequestHandler, unmatchedLog *output.UnmatchedLog, logf func(string, ...any)) (*Proxy, error) {
-	if !proxyCreated.CompareAndSwap(false, true) {
-		return nil, fmt.Errorf("only one Proxy instance is supported per process (goproxy.GoproxyCa is a package-level global)")
+// New returns a Proxy configured by opts.
+func New(opts Options) *Proxy {
+	status := opts.Status
+	if status == nil {
+		status = io.Discard
 	}
-
-	if err := certmgr.EnsureCACert(); err != nil {
-		return nil, fmt.Errorf("ensure CA cert: %w", err)
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
 	}
-
-	tlsCert, err := certmgr.LoadTLSCert()
-	if err != nil {
-		return nil, fmt.Errorf("load CA cert: %w", err)
-	}
-
-	// goproxy uses cert.Leaf to sign per-site certificates - must be populated.
-	if tlsCert.Leaf == nil {
-		tlsCert.Leaf, err = x509.ParseCertificate(tlsCert.Certificate[0])
-		if err != nil {
-			return nil, fmt.Errorf("parse CA cert leaf: %w", err)
-		}
-	}
-
-	goproxy.GoproxyCa = tlsCert
-
-	if logf == nil {
-		logf = func(format string, args ...any) { fmt.Fprintf(os.Stderr, format, args...) }
-	}
+	ca := opts.CA
 
 	return &Proxy{
-		Port:         port,
-		Debug:        debug,
-		cat:          cat,
-		handler:      handler,
-		unmatchedLog: unmatchedLog,
-		logf:         logf,
-	}, nil
+		Port: opts.Port,
+		// Built from this proxy's own CA rather than goproxy.MitmConnect, which
+		// signs with the package-level goproxy.GoproxyCa and so would force every
+		// Proxy in the process to share one CA.
+		mitm:         &goproxy.ConnectAction{Action: goproxy.ConnectMitm, TLSConfig: goproxy.TLSConfigFromCA(&ca)},
+		cat:          opts.Catalog,
+		handler:      opts.Handler,
+		unmatchedLog: opts.UnmatchedLog,
+		status:       status,
+		logger:       logger,
+	}
 }
 
 // Start binds the proxy port and begins serving in a background goroutine.
 // Returns an error immediately if the port cannot be bound.
-func (p *Proxy) Start() error {
+//
+// The proxy serves until Stop, not until ctx is cancelled. A wrapped command
+// still exiting after an interrupt can make its last API calls through it, and
+// those calls belong in the rules.
+func (p *Proxy) Start(ctx context.Context) error {
 	proxyServer := goproxy.NewProxyHttpServer()
 	proxyServer.Verbose = false
 
 	// Intercept all HTTPS CONNECT tunnels for MITM.
-	proxyServer.OnRequest().HandleConnect(goproxy.AlwaysMitm)
+	proxyServer.OnRequest().HandleConnectFunc(func(host string, _ *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+		return p.mitm, host
+	})
 
-	// NOTE: long-running requests will not be interrupted when Stop is called
-	// because bgCtx is not threaded into individual goproxy request handlers.
-	// For narc's use case (short-lived OpenStack API calls) this is a known,
-	// acceptable limitation. To fix, pass bgCtx via goproxy.ProxyCtx.
-	proxyServer.OnRequest().DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-		if p.Debug {
-			p.logf("[narc:debug] %s %s\n", req.Method, req.URL.String())
-		}
+	proxyServer.OnRequest().DoFunc(func(req *http.Request, _ *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		p.logger.Debug("request", slog.String("method", req.Method), slog.String("url", req.URL.String()))
 		if p.handler != nil {
 			p.handler.HandleRequest(req.Method, req.URL.String())
 		}
 		// Warn about requests that arrive before the catalog is populated,
 		// excluding the Keystone auth request itself.
 		if p.cat != nil && !p.cat.IsReady() && !isKeystoneAuthPath(req.URL.Path) {
-			p.logf("[narc:warn] Request received before catalog loaded - recording to unmatched_requests.log\n")
+			fmt.Fprintf(p.status, "[!] Request received before the service catalog loaded, logged as unmatched\n")
 			if p.unmatchedLog != nil {
 				_ = p.unmatchedLog.Write(req.URL.String())
 			}
@@ -128,7 +127,7 @@ func (p *Proxy) Start() error {
 
 	// Intercept POST /v3/auth/tokens responses to populate the service catalog.
 	if p.cat != nil {
-		proxyServer.OnResponse(keystoneAuthCondition()).DoFunc(func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+		proxyServer.OnResponse(keystoneAuthCondition()).DoFunc(func(resp *http.Response, _ *goproxy.ProxyCtx) *http.Response {
 			if resp == nil {
 				return resp
 			}
@@ -137,52 +136,48 @@ func (p *Proxy) Start() error {
 			// Always restore the body so the client still receives the full response.
 			resp.Body = io.NopCloser(bytes.NewReader(body))
 			if err != nil {
-				p.logf("[narc:warn] Failed to read Keystone response body: %v\n", err)
+				p.logger.Warn("could not read the Keystone response body", slog.Any("error", err))
 				return resp
 			}
 			wasLoaded := p.cat.IsReady()
 			if err := p.cat.Update(body); err != nil {
-				if p.Debug {
-					p.logf("[narc:debug] catalog update error: %v\n", err)
-				}
+				p.logger.Debug("catalog update failed", slog.Any("error", err))
 				return resp
 			}
 			n := p.cat.Len()
 			if wasLoaded {
-				p.logf("[narc] Service catalog updated (%d services)\n", n)
+				fmt.Fprintf(p.status, "[*] Service catalog updated (%d services)\n", n)
 			} else {
-				p.logf("[narc] Service catalog loaded (%d services)\n", n)
+				fmt.Fprintf(p.status, "[*] Service catalog loaded (%d services)\n", n)
 			}
 			return resp
 		})
 	}
 
 	// Bind before spawning goroutine so port errors surface immediately.
-	addr := fmt.Sprintf("127.0.0.1:%d", p.Port)
-	ln, err := net.Listen("tcp", addr)
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p.Port))
 	if err != nil {
-		return fmt.Errorf("bind %s: %w", addr, err)
+		return err
 	}
 	// Update Port with the actual bound port (important when Port was 0).
 	p.Port = ln.Addr().(*net.TCPAddr).Port
 
-	bgCtx, cancel := context.WithCancel(context.Background())
-	p.cancel = cancel
-
-	p.server = &http.Server{
-		Addr:              addr,
+	baseCtx := context.WithoutCancel(ctx)
+	srv := &http.Server{
 		Handler:           proxyServer,
 		ReadHeaderTimeout: 30 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		BaseContext: func(_ net.Listener) context.Context {
-			return bgCtx
+			return baseCtx
 		},
 	}
+	p.server = srv
 
+	// The goroutine holds srv rather than reading p.server, which Stop clears.
 	go func() {
-		if err := p.server.Serve(ln); err != nil && err != http.ErrServerClosed {
-			p.logf("[narc:error] proxy: %v\n", err)
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			p.logger.Error("proxy stopped serving", slog.Any("error", err))
 		}
 	}()
 
@@ -191,8 +186,8 @@ func (p *Proxy) Start() error {
 
 // keystoneAuthCondition matches POST requests to the Keystone v3 token endpoint.
 func keystoneAuthCondition() goproxy.ReqConditionFunc {
-	return func(req *http.Request, ctx *goproxy.ProxyCtx) bool {
-		return req.Method == "POST" && isKeystoneAuthPath(req.URL.Path)
+	return func(req *http.Request, _ *goproxy.ProxyCtx) bool {
+		return req.Method == http.MethodPost && isKeystoneAuthPath(req.URL.Path)
 	}
 }
 
@@ -201,16 +196,20 @@ func isKeystoneAuthPath(path string) bool {
 	return strings.HasSuffix(path, "/v3/auth/tokens")
 }
 
-// Stop gracefully shuts down the proxy, waiting up to 5 seconds for in-flight requests.
-func (p *Proxy) Stop() {
-	if p.cancel != nil {
-		p.cancel()
+// Stop shuts the proxy down, waiting up to shutdownTimeout for in-flight
+// requests. It is called once the command is finishing, often because ctx was
+// cancelled, so it waits on a context detached from that cancellation. Calling
+// it again does nothing.
+func (p *Proxy) Stop(ctx context.Context) {
+	if p.server == nil {
+		return
 	}
-	if p.server != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := p.server.Shutdown(ctx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
-			p.logf("[narc:warn] proxy shutdown: %v\n", err)
-		}
+	srv := p.server
+	p.server = nil
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		p.logger.Warn("proxy shutdown", slog.Any("error", err))
 	}
 }
