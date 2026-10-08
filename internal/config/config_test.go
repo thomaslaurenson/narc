@@ -8,6 +8,7 @@ import (
 )
 
 func TestLoadReturnsErrNotFoundWhenMissing(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	dir := filepath.Join(tmp, ".narc")
 
@@ -18,6 +19,7 @@ func TestLoadReturnsErrNotFoundWhenMissing(t *testing.T) {
 }
 
 func TestDefaultsValues(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	dir := filepath.Join(tmp, ".narc")
 
@@ -50,6 +52,7 @@ func TestDefaultsValues(t *testing.T) {
 }
 
 func TestLoadRespectsExistingFile(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	dir := filepath.Join(tmp, ".narc")
 
@@ -76,6 +79,7 @@ func TestLoadRespectsExistingFile(t *testing.T) {
 }
 
 func TestLoadFallsBackToDefaultsForZeroValues(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	dir := filepath.Join(tmp, ".narc")
 
@@ -106,6 +110,7 @@ func TestLoadFallsBackToDefaultsForZeroValues(t *testing.T) {
 }
 
 func TestLoadMigratesBareFilename(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	dir := filepath.Join(tmp, ".narc")
 
@@ -134,6 +139,7 @@ func TestLoadMigratesBareFilename(t *testing.T) {
 }
 
 func TestConfigSaveRoundTrip(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	dir := filepath.Join(tmp, ".narc")
 

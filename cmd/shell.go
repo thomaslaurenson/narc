@@ -28,6 +28,11 @@ type shellOptions struct {
 	outputFile string
 }
 
+var (
+	errNestedSession = errors.New("already inside a narc recording session; nested narc shell is not supported")
+	errNoTerminal    = errors.New("narc shell needs an interactive terminal; use narc run -- <command> instead")
+)
+
 // sessionBanner is printed when a recording session starts.
 const sessionBanner = `
 +----------------------------------------+
@@ -60,14 +65,14 @@ not supported.`,
 
 func (a *App) runShell(cmd *cobra.Command, opts shellOptions) error {
 	if lookupEnv(a.environ, "NARC_RECORDING") == "1" {
-		return errors.New("already inside a narc recording session; nested narc shell is not supported")
+		return errNestedSession
 	}
 
 	// The session drives the real terminal: raw mode and the pty size both act
 	// on the process's own stdin, so an injected reader cannot stand in for it.
 	stdinFd := int(os.Stdin.Fd())
 	if !term.IsTerminal(stdinFd) {
-		return errors.New("narc shell needs an interactive terminal; use narc run -- <command> instead")
+		return errNoTerminal
 	}
 
 	cfg, home, err := a.loadConfig(cmd)

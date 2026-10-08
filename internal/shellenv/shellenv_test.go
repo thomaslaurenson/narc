@@ -7,6 +7,7 @@ import (
 )
 
 func TestDetect(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		shellPath string
@@ -24,6 +25,7 @@ func TestDetect(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := Detect(tt.shellPath, tt.env)
 			if got != tt.want {
 				t.Errorf("Detect(%q, %v) = %v, want %v", tt.shellPath, tt.env, got, tt.want)
@@ -33,6 +35,7 @@ func TestDetect(t *testing.T) {
 }
 
 func TestBuildFishEnv_SetsPrefix(t *testing.T) {
+	t.Parallel()
 	base := []string{"FOO=bar", "HOME=/home/user"}
 	env, cleanup, err := buildFishEnv(base)
 	if err != nil {
@@ -52,6 +55,7 @@ func TestBuildFishEnv_SetsPrefix(t *testing.T) {
 }
 
 func TestBuildFishEnv_NoDuplication(t *testing.T) {
+	t.Parallel()
 	base := []string{"SHELL_PROMPT_PREFIX=old "}
 	env, cleanup, err := buildFishEnv(base)
 	if err != nil {
@@ -71,6 +75,7 @@ func TestBuildFishEnv_NoDuplication(t *testing.T) {
 }
 
 func TestBuildBashEnv(t *testing.T) {
+	t.Parallel()
 	base := []string{"FOO=bar"}
 	env, shellArgs, cleanup, err := buildBashEnv(base)
 	if err != nil {
@@ -110,6 +115,7 @@ func TestBuildBashEnv(t *testing.T) {
 }
 
 func TestBuildZshEnv_Bare(t *testing.T) {
+	t.Parallel()
 	base := []string{"FOO=bar"}
 	env, cleanup, err := buildZshEnv(ShellZsh, base, t.TempDir())
 	if err != nil {
@@ -141,6 +147,7 @@ func TestBuildZshEnv_Bare(t *testing.T) {
 }
 
 func TestBuildZshEnv_OMZ(t *testing.T) {
+	t.Parallel()
 	base := []string{"ZSH=/home/user/.oh-my-zsh"}
 	env, cleanup, err := buildZshEnv(ShellZshOMZ, base, t.TempDir())
 	if err != nil {

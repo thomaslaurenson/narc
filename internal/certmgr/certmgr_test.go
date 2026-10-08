@@ -101,6 +101,7 @@ func TestGenerateCACert(t *testing.T) {
 }
 
 func TestEnsureCACertIdempotent(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), ".narc")
 
 	// First call: generates the cert.

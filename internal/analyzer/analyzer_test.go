@@ -98,6 +98,7 @@ func TestNormalizePath(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got := normalizePath(tc.rawURL, tc.baseURL)
 			if got != tc.want {
 				t.Errorf("normalizePath(%q, %q) = %q, want %q",

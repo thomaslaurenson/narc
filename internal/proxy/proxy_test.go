@@ -48,6 +48,7 @@ func testCA(t *testing.T) tls.Certificate {
 }
 
 func TestProxyNewNilCatalogAndHandler(t *testing.T) {
+	t.Parallel()
 	p := New(Options{CA: testCA(t)})
 	if err := p.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -56,6 +57,7 @@ func TestProxyNewNilCatalogAndHandler(t *testing.T) {
 }
 
 func TestProxyTwoInstances(t *testing.T) {
+	t.Parallel()
 	first := New(Options{CA: testCA(t)})
 	if err := first.Start(context.Background()); err != nil {
 		t.Fatalf("first Start: %v", err)
@@ -83,6 +85,7 @@ func (m *mockHandler) HandleRequest(method, rawURL string) {
 }
 
 func TestProxyIntegration(t *testing.T) {
+	t.Parallel()
 	// Start a trivial target HTTP server.
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
