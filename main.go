@@ -19,7 +19,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 
-	root := cmd.NewRootCmd(os.Environ(), os.Stdout, os.Stderr)
+	root := cmd.NewRootCmd(os.Environ(), os.UserHomeDir, os.Stdout, os.Stderr)
 	if err := root.ExecuteContext(ctx); err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
 			os.Exit(130)

@@ -20,14 +20,14 @@ var (
 	numericRE = regexp.MustCompile(`^\d+$`)
 )
 
-// AccessRule is a single normalized OpenStack API access rule.
+// AccessRule is a single normalised OpenStack API access rule.
 type AccessRule struct {
 	Service string `json:"service"`
 	Method  string `json:"method"`
 	Path    string `json:"path"`
 }
 
-// Analyzer classifies intercepted requests, normalizes their paths, deduplicates,
+// Analyzer classifies intercepted requests, normalises their paths, deduplicates,
 // and accumulates AccessRule entries.
 type Analyzer struct {
 	mu           sync.Mutex
@@ -58,7 +58,7 @@ func (a *Analyzer) HandleRequest(method, rawURL string) {
 	a.Process(method, rawURL)
 }
 
-// Process classifies rawURL using the catalog, normalizes the path, deduplicates,
+// Process classifies rawURL using the catalog, normalises the path, deduplicates,
 // and stores the rule. Unclassified URLs (when catalog is ready) are appended to
 // unmatched_requests.log.
 func (a *Analyzer) Process(method, rawURL string) {
@@ -137,7 +137,7 @@ func normalizePath(rawURL, baseURL string) string {
 	}
 	path = strings.Join(segments, "/")
 
-	// Trailing slash → append **.
+	// Trailing slash -> append **.
 	if strings.HasSuffix(path, "/") {
 		path += "**"
 	}

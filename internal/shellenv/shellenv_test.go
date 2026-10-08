@@ -111,7 +111,7 @@ func TestBuildBashEnv(t *testing.T) {
 
 func TestBuildZshEnv_Bare(t *testing.T) {
 	base := []string{"FOO=bar"}
-	env, cleanup, err := buildZshEnv(ShellZsh, base)
+	env, cleanup, err := buildZshEnv(ShellZsh, base, t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestBuildZshEnv_Bare(t *testing.T) {
 
 func TestBuildZshEnv_OMZ(t *testing.T) {
 	base := []string{"ZSH=/home/user/.oh-my-zsh"}
-	env, cleanup, err := buildZshEnv(ShellZshOMZ, base)
+	env, cleanup, err := buildZshEnv(ShellZshOMZ, base, t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

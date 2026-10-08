@@ -1,20 +1,29 @@
-// Package config loads and persists narc's runtime configuration from ~/.narc/narc.json.
+// Package config loads and persists narc's runtime configuration, kept in
+// narc.json in the narc directory.
 package config
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
 
 const (
-	DefaultProxyPort  = 9099
+	// DefaultProxyPort is the port the proxy listens on unless configured
+	// otherwise.
+	DefaultProxyPort = 9099
+	// DefaultOutputFile is the name of the access rules file in the narc
+	// directory.
 	DefaultOutputFile = "access_rules.json"
-	DefaultLogFile    = "unmatched_requests.log"
-	configFilename    = "narc.json"
-	narcDirName       = ".narc"
+	// DefaultLogFile is the name of the unmatched request log in the narc
+	// directory.
+	DefaultLogFile = "unmatched_requests.log"
+
+	dirName        = ".narc"
+	configFilename = "narc.json"
 )
 
 // Config holds the resolved settings for a narc session.
@@ -27,65 +36,41 @@ type Config struct {
 // ErrNotFound is returned by Load when the config file does not exist.
 var ErrNotFound = errors.New("config file not found")
 
-// NarcDirPath returns the path to the narc configuration directory without
-// creating it. Use this when only the path is needed (e.g. read-only lookups).
-func NarcDirPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, narcDirName), nil
+// Dir returns the narc directory under home.
+func Dir(home string) string {
+	return filepath.Join(home, dirName)
 }
 
-// NarcDir returns the path to the narc configuration directory, creating it if
-// it does not already exist. Use this before any write operations.
-func NarcDir() (string, error) {
-	dir, err := NarcDirPath()
-	if err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return "", err
-	}
-	return dir, nil
-}
-
-// Load reads the narc configuration file from ~/.narc/narc.json.
-// Returns ErrNotFound if the file does not exist.
-func Load() (*Config, error) {
-	dir, err := NarcDirPath()
-	if err != nil {
-		return nil, err
-	}
-
+// Load reads narc.json from dir. It returns ErrNotFound when the file does not
+// exist.
+func Load(dir string) (*Config, error) {
 	path := filepath.Join(dir, configFilename)
 	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, ErrNotFound
+	}
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, ErrNotFound
-		}
 		return nil, err
 	}
 
-	c := Defaults()
+	c := Defaults(dir)
 	if err := json.Unmarshal(data, c); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse %q: %w", path, err)
 	}
 
-	// Enforce defaults for zero-value fields (read-tolerant).
-	d := Defaults()
+	// A field the file sets to its zero value falls back to the default.
 	if c.ProxyPort == 0 {
 		c.ProxyPort = DefaultProxyPort
 	}
 	if c.OutputFile == "" {
-		c.OutputFile = d.OutputFile
+		c.OutputFile = filepath.Join(dir, DefaultOutputFile)
 	}
 	if c.LogFile == "" {
-		c.LogFile = d.LogFile
+		c.LogFile = filepath.Join(dir, DefaultLogFile)
 	}
 
-	// Migrate bare filenames (no directory component) to ~/.narc/.
-	// Any filename without a path separator would otherwise resolve to CWD.
+	// A bare filename is kept in dir, since it would otherwise resolve against
+	// whichever directory narc happens to be run from.
 	if !filepath.IsAbs(c.OutputFile) && filepath.Dir(c.OutputFile) == "." {
 		c.OutputFile = filepath.Join(dir, c.OutputFile)
 	}
@@ -94,40 +79,30 @@ func Load() (*Config, error) {
 	}
 
 	if c.ProxyPort < 1 || c.ProxyPort > 65535 {
-		return nil, fmt.Errorf("proxy_port %d is out of range (1-65535)", c.ProxyPort)
+		return nil, fmt.Errorf("proxy_port %d in %q is out of range (1-65535)", c.ProxyPort, path)
 	}
 
 	return c, nil
 }
 
-// Save writes the configuration to ~/.narc/narc.json, creating the directory
-// if it does not exist.
-func (c *Config) Save() error {
-	dir, err := NarcDir()
-	if err != nil {
+// Save writes the configuration to narc.json in dir, creating dir if it does
+// not exist.
+func (c *Config) Save(dir string) error {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 
 	data, err := json.MarshalIndent(c, "", "    ")
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal config: %w", err)
 	}
 
-	path := filepath.Join(dir, configFilename)
-	return os.WriteFile(path, data, 0600)
+	return os.WriteFile(filepath.Join(dir, configFilename), data, 0600)
 }
 
-// Defaults returns a Config populated with sensible defaults anchored to ~/.narc/.
-func Defaults() *Config {
-	dir, err := NarcDirPath()
-	if err != nil {
-		// Fallback to relative names if home directory is unavailable.
-		return &Config{
-			ProxyPort:  DefaultProxyPort,
-			OutputFile: DefaultOutputFile,
-			LogFile:    DefaultLogFile,
-		}
-	}
+// Defaults returns a Config populated with the default settings, with its files
+// kept in dir.
+func Defaults(dir string) *Config {
 	return &Config{
 		ProxyPort:  DefaultProxyPort,
 		OutputFile: filepath.Join(dir, DefaultOutputFile),

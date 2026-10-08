@@ -9,9 +9,9 @@ import (
 
 func TestLoadReturnsErrNotFoundWhenMissing(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
+	dir := filepath.Join(tmp, ".narc")
 
-	_, err := Load()
+	_, err := Load(dir)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Load: got %v, want ErrNotFound", err)
 	}
@@ -19,27 +19,27 @@ func TestLoadReturnsErrNotFoundWhenMissing(t *testing.T) {
 
 func TestDefaultsValues(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
+	dir := filepath.Join(tmp, ".narc")
 
-	cfg := Defaults()
+	cfg := Defaults(dir)
 	if cfg.ProxyPort != DefaultProxyPort {
 		t.Errorf("ProxyPort: got %d, want %d", cfg.ProxyPort, DefaultProxyPort)
 	}
-	wantOutput := filepath.Join(tmp, ".narc", DefaultOutputFile)
+	wantOutput := filepath.Join(dir, DefaultOutputFile)
 	if cfg.OutputFile != wantOutput {
 		t.Errorf("OutputFile: got %q, want %q", cfg.OutputFile, wantOutput)
 	}
-	wantLog := filepath.Join(tmp, ".narc", DefaultLogFile)
+	wantLog := filepath.Join(dir, DefaultLogFile)
 	if cfg.LogFile != wantLog {
 		t.Errorf("LogFile: got %q, want %q", cfg.LogFile, wantLog)
 	}
 
-	if err := cfg.Save(); err != nil {
+	if err := cfg.Save(dir); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
 	// Verify narc.json was written with correct permissions.
-	cfgPath := filepath.Join(tmp, ".narc", "narc.json")
+	cfgPath := filepath.Join(dir, "narc.json")
 	info, err := os.Stat(cfgPath)
 	if err != nil {
 		t.Fatalf("narc.json not created: %v", err)
@@ -51,10 +51,10 @@ func TestDefaultsValues(t *testing.T) {
 
 func TestLoadRespectsExistingFile(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
+	dir := filepath.Join(tmp, ".narc")
 
 	// Write a custom config.
-	narcDir := filepath.Join(tmp, ".narc")
+	narcDir := dir
 	if err := os.MkdirAll(narcDir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestLoadRespectsExistingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := Load()
+	cfg, err := Load(dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -77,9 +77,9 @@ func TestLoadRespectsExistingFile(t *testing.T) {
 
 func TestLoadFallsBackToDefaultsForZeroValues(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
+	dir := filepath.Join(tmp, ".narc")
 
-	narcDir := filepath.Join(tmp, ".narc")
+	narcDir := dir
 	if err := os.MkdirAll(narcDir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -88,18 +88,18 @@ func TestLoadFallsBackToDefaultsForZeroValues(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := Load()
+	cfg, err := Load(dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if cfg.ProxyPort != DefaultProxyPort {
 		t.Errorf("ProxyPort: got %d, want %d", cfg.ProxyPort, DefaultProxyPort)
 	}
-	wantOutput := filepath.Join(tmp, ".narc", DefaultOutputFile)
+	wantOutput := filepath.Join(dir, DefaultOutputFile)
 	if cfg.OutputFile != wantOutput {
 		t.Errorf("OutputFile: got %q, want %q", cfg.OutputFile, wantOutput)
 	}
-	wantLog := filepath.Join(tmp, ".narc", DefaultLogFile)
+	wantLog := filepath.Join(dir, DefaultLogFile)
 	if cfg.LogFile != wantLog {
 		t.Errorf("LogFile: got %q, want %q", cfg.LogFile, wantLog)
 	}
@@ -107,9 +107,9 @@ func TestLoadFallsBackToDefaultsForZeroValues(t *testing.T) {
 
 func TestLoadMigratesBareFilename(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
+	dir := filepath.Join(tmp, ".narc")
 
-	narcDir := filepath.Join(tmp, ".narc")
+	narcDir := dir
 	if err := os.MkdirAll(narcDir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestLoadMigratesBareFilename(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := Load()
+	cfg, err := Load(dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -135,18 +135,18 @@ func TestLoadMigratesBareFilename(t *testing.T) {
 
 func TestConfigSaveRoundTrip(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
+	dir := filepath.Join(tmp, ".narc")
 
 	original := &Config{
 		ProxyPort:  8080,
 		OutputFile: "/tmp/custom_rules.json",
 		LogFile:    "/tmp/custom.log",
 	}
-	if err := original.Save(); err != nil {
+	if err := original.Save(dir); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
-	loaded, err := Load()
+	loaded, err := Load(dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}

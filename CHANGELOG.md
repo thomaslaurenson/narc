@@ -6,10 +6,15 @@
 
 - Add a --version flag, and accept --port 0 to pick any free port
 
+### Changed
+
+- Mark narc's own output with [*], [+], [~] and [!], and print debug output as key=value log lines
+
 ### Fixed
 
 - Fix a bare narc invocation exiting zero, and go install builds reporting their version as dev
 - Fix narc shell leaving the terminal raw and writing no rules when narc is terminated
+- Fix narc exiting zero when the rules file cannot be written, and emptying it when a command fails to start
 
 ### Updated
 

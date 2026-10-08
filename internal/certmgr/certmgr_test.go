@@ -101,26 +101,30 @@ func TestGenerateCACert(t *testing.T) {
 }
 
 func TestEnsureCACertIdempotent(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
+	dir := filepath.Join(t.TempDir(), ".narc")
 
 	// First call: generates the cert.
-	if err := EnsureCACert(); err != nil {
+	status, err := EnsureCACert(dir)
+	if err != nil {
 		t.Fatalf("first EnsureCACert: %v", err)
 	}
-
-	certPath, err := CACertPath()
-	if err != nil {
-		t.Fatalf("CACertPath: %v", err)
+	if status != StatusCreated {
+		t.Errorf("first EnsureCACert status = %v, want StatusCreated", status)
 	}
+
+	certPath := CACertPath(dir)
 	firstStat, err := os.Stat(certPath)
 	if err != nil {
 		t.Fatalf("stat after first EnsureCACert: %v", err)
 	}
 
 	// Second call: must not regenerate the cert.
-	if err := EnsureCACert(); err != nil {
+	status, err = EnsureCACert(dir)
+	if err != nil {
 		t.Fatalf("second EnsureCACert: %v", err)
+	}
+	if status != StatusCurrent {
+		t.Errorf("second EnsureCACert status = %v, want StatusCurrent", status)
 	}
 	secondStat, err := os.Stat(certPath)
 	if err != nil {

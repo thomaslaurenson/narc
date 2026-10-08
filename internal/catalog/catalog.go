@@ -79,7 +79,7 @@ func (c *Catalog) Update(body []byte) error {
 
 // Lookup returns the catalog Entry whose BaseURL is the longest prefix of requestURL.
 // Returns (Entry{}, false) if no entry matches.
-// The request URL is normalized (default port stripped) before matching so that
+// The request URL is normalised (default port stripped) before matching so that
 // goproxy-reconstructed HTTPS URLs (e.g. https://host:443/path) match catalog
 // entries that omit the default port.
 func (c *Catalog) Lookup(requestURL string) (Entry, bool) {

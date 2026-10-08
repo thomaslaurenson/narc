@@ -16,13 +16,10 @@ ZDOTDIR="${NARC_REAL_ZDOTDIR}"
 [[ "$PROMPT" != "(narc)"* ]] && PROMPT="(narc) $PROMPT"
 `
 
-func buildZshEnv(kind ShellKind, baseEnv []string) (env []string, cleanup func(), err error) {
+func buildZshEnv(kind ShellKind, baseEnv []string, home string) (env []string, cleanup func(), err error) {
 	realZDOTDIR, ok := lookupEnv(baseEnv, "ZDOTDIR")
 	if !ok || realZDOTDIR == "" {
-		realZDOTDIR, err = os.UserHomeDir()
-		if err != nil {
-			return nil, func() {}, fmt.Errorf("get user home dir: %w", err)
-		}
+		realZDOTDIR = home
 	}
 
 	tmpDir, err := os.MkdirTemp("", "narc-zsh-*")

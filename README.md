@@ -79,18 +79,18 @@ terraform apply
 
 ```sh
 thomas@t1000:~$ narc shell
-[narc] Proxy listening on http://127.0.0.1:9099
+[*] Proxy listening on http://127.0.0.1:9099
 
-╔════════════════════════════════════════╗
-║      narc is recording this session    ║
-║      Type 'exit' or Ctrl-D to stop     ║
-╚════════════════════════════════════════╝
++----------------------------------------+
+|      narc is recording this session    |
+|      Type 'exit' or Ctrl-D to stop     |
++----------------------------------------+
 (narc) thomas@t1000:~$ openstack server list
 (narc) thomas@t1000:~$ openstack network list
 (narc) thomas@t1000:~$ exit
 
-[narc] Shutting down...
-[narc] Done. 6 unique access rule(s) written to /home/thomas/.narc/access_rules.json
+[*] Shutting down...
+[*] Done. 6 unique access rule(s) written to /home/thomas/.narc/access_rules.json
 ```
 
 > **Note:** Running `narc shell` inside an existing `narc shell` is not supported and will exit with an error. Use `narc run -- <cmd>` to record a specific command from within an active session if needed.
@@ -162,11 +162,11 @@ When `narc run` wraps a subprocess, it injects the following into the child's en
 
 | Shell | Support | Method |
 |---|---|---|
-| bash | ✅ Full | `--rcfile` injection after `.bashrc` loads |
-| zsh | ✅ Full | `ZDOTDIR` override |
-| zsh + oh-my-zsh | ✅ Full | `ZDOTDIR` override + persistent `precmd` hook |
-| fish | ✅ Full | `SHELL_PROMPT_PREFIX` (native fish variable) |
-| sh / dash / other | ⚠️ Banner only | No prompt prefix, session banner is the indicator |
+| bash | Full | `--rcfile` injection after `.bashrc` loads |
+| zsh | Full | `ZDOTDIR` override |
+| zsh + oh-my-zsh | Full | `ZDOTDIR` override + persistent `precmd` hook |
+| fish | Full | `SHELL_PROMPT_PREFIX` (native fish variable) |
+| sh / dash / other | Banner only | No prompt prefix, session banner is the indicator |
 
 **Unsupported prompt frameworks (Starship, Powerlevel10k, oh-my-posh, Spaceship, Prezto):**
 
