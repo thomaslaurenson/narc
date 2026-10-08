@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.6 - 2026-08-14
+
+### Updated
+
+- Move to new gpipe action
+
 ## 0.5.5 - 2026-07-17
 
 ### Updated
