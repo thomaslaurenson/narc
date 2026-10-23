@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.7 - 2026-10-23
+
+### Updated
+
+- Build release binaries with the newest Go 1.27 patch release
+- Update goproxy, the Go network libraries and other dependencies
+
 ## 0.5.6 - 2026-10-08
 
 ### Added
